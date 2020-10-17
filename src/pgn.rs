@@ -1,17 +1,41 @@
-use chess::{ChessMove, Piece, Board, Color};
-
-fn piece_fmt(piece: Piece) -> String {
-    piece.to_string(Color::White)
-}
+use chess::{ChessMove, Piece, Board, Color, Square};
 
 fn moved_piece(board: &Board, mv: ChessMove) -> Piece {
     board.piece_on(mv.get_source()).unwrap()
 }
 
+fn piece_fmt(piece: Piece) -> String {
+    piece.to_string(Color::White)
+}
+
+fn pos_fmt(sq: Square) -> String {
+    format!("{}", sq)
+}
+
+fn promote_fmt(mv: ChessMove) -> Option<String> {
+    match mv.get_promotion() {
+        Some(new_piece) => {
+            let prefix = '=';
+            let mut piece_rep = piece_fmt(new_piece);
+            piece_rep.insert(0, prefix);
+            return Some(piece_rep);
+        }
+
+        None => None
+    }
+}
+
 fn gen_move(fmt_mv: FmtMove) -> String {
     let (mv, moved_piece) = fmt_mv;
+
+    let source_rep = pos_fmt(mv.get_source());
+    let dest_rep   = pos_fmt(mv.get_dest());
+
     let piece_rep = piece_fmt(moved_piece);
-    format!("{}{}", piece_rep, mv)
+
+    let promote_rep = promote_fmt(mv).unwrap_or_default();
+
+    format!("{}{}{}{}", piece_rep, source_rep, dest_rep, promote_rep)
 }
 
 type FmtMove = (ChessMove, Piece);
