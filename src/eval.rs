@@ -1,15 +1,18 @@
-use chess::{Board, Color, Piece};
+use chess::{Board, BoardStatus, Color, Piece, Square};
 
 //type Score = f32;
 
 //const MAX_SCORE: Score = 1000.0;
 //const MIN_SCORE: Score = -1000.0;
-type Score = i16;
+pub type Score = i16;
 
+const DRAW_SCORE:    Score = 0;
+const WINNING_SCORE: Score = Score::MAX;
+const LOSING_SCORE:  Score = Score::MIN;
 //const MAX_SCORE: Score = 1000.0;
 //const MIN_SCORE: Score = -1000.0;
 
-type EvalFun = fn (&Board, Color) -> Score;
+pub type EvalFun = fn (&Board, Color) -> Score;
 
 trait EvalFun2 {
     type Score2: std::cmp::PartialOrd;
@@ -35,23 +38,36 @@ fn piece_value(piece: Piece) -> Score {
 }
 
 #[allow(unused_parens)]
-pub fn classic_eval(board: &Board, player: Color) -> Score {
-    let mut score: Score = 0;
-    for sq_ref in chess::ALL_SQUARES.iter() {
-        let sq = sq_ref.clone();
-        match board.piece_on(sq) {
-            Some(piece) => {
-                let color = board.color_on(sq).unwrap();
-                let color_mult = if (player == color) { 1 } else { -1 };
+fn square_value(sq: Square, board: &Board, player: Color) -> Score {
+    match board.piece_on(sq) {
+        Some(piece) => {
+            let color = board.color_on(sq).unwrap();
+            let color_mult = if (player == color) { 1 } else { -1 };
 
-                score += (color_mult * piece_value(piece));
-            },
-
-            None => {},
+            color_mult * piece_value(piece)
         }
+
+        None => 0
     }
-    //for piece_kind in all_pieces() {
-        //let bit_set = board.pieces(piece_kind) // need the color here !
-    //}
+}
+
+fn square_based_score(board: &Board, player: Color) -> Score {
+    let mut score: Score = 0;
+
+    for sq_ref in chess::ALL_SQUARES.iter() {
+        score += square_value(sq_ref.clone(), board, player);
+    }
+
     return score;
+}
+
+pub fn classic_eval(board: &Board, player: Color) -> Score {
+    match board.status() {
+        BoardStatus::Stalemate => DRAW_SCORE,
+
+        BoardStatus::Checkmate =>
+            if player == board.side_to_move() { LOSING_SCORE } else { WINNING_SCORE },
+
+        BoardStatus::Ongoing   => square_based_score(board, player),
+    }
 }

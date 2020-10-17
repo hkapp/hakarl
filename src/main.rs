@@ -1,8 +1,9 @@
-
 mod pgn;
 mod eval;
 mod play;
 
 fn main() {
-    play::play_random_game();
+    let white = play::evaldriven::classic_eval_player();
+    let black = play::random::random_player();
+    play::play_game(white, black);
 }

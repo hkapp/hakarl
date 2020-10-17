@@ -11,12 +11,6 @@ fn pick_random_move<R: Rng>(board: &Board, rng: &mut R) -> ChessMove {
     }
 }
 
-fn play_random_move<R: Rng>(board: &Board, rng: &mut R) -> Board {
-    let mv = pick_random_move(board, rng);
-    println!("{}", mv);
-    board.make_move_new(mv)
-}
-
 pub struct RandomPlayer<R: Rng> {
     rng: R
 }

@@ -1,4 +1,4 @@
-use chess::{ChessMove, Piece, Board, Color, Square};
+use chess::{ChessMove, Piece, Board, Color, Square, File};
 
 fn moved_piece(board: &Board, mv: ChessMove) -> Piece {
     board.piece_on(mv.get_source()).unwrap()
@@ -25,9 +25,34 @@ fn promote_fmt(mv: ChessMove) -> Option<String> {
     }
 }
 
-fn gen_move(fmt_mv: FmtMove) -> String {
+fn try_castle_format(fmt_mv: FmtMove) -> Option<String> {
     let (mv, moved_piece) = fmt_mv;
 
+    if moved_piece == Piece::King && mv.get_source().get_file() == File::E {
+        /* Checking the rank is pointless, as the files check correspond
+         * to a 2-hop or 3-hop move, which can only be done via castling
+         */
+        match mv.get_dest().get_file() {
+            File::G => Some(String::from("O-O")),
+            File::C => Some(String::from("O-O-O")),
+            _       => None
+        }
+
+    }
+    else {
+        None
+    }
+}
+
+fn gen_move(fmt_mv: FmtMove) -> String {
+    /* Check for castle move, which has special format */
+    let castle_rep = try_castle_format(fmt_mv);
+    if castle_rep.is_some() {
+        return castle_rep.unwrap();
+    }
+
+    let (mv, moved_piece) = fmt_mv;
+    /* TODO make this code use 'format' to append to the string directly? */
     let source_rep = pos_fmt(mv.get_source());
     let dest_rep   = pos_fmt(mv.get_dest());
 

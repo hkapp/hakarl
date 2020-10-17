@@ -3,6 +3,7 @@ use core::ops::Not;
 use crate::pgn;
 
 pub mod random;
+pub mod evaldriven;
 
 pub trait ChessPlayer {
     fn pick_move(&mut self, board: &Board) -> ChessMove;
@@ -20,13 +21,13 @@ pub fn play_game<P1: ChessPlayer, P2: ChessPlayer>(mut white: P1, mut black: P2)
         };
         move_list.push(mv);
         board = board.make_move_new(mv);
-        println!("Board value is now: {}", crate::eval::classic_eval(&board, board.side_to_move()));
     }
 
     println!("{}", pgn::basic_pgn(&move_list));
     print_end_of_game(&board);
 }
 
+#[allow(dead_code)]
 pub fn play_random_game() {
     let white = random::random_player();
     let black = random::random_player();
