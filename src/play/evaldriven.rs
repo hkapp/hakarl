@@ -54,6 +54,7 @@ fn pick_best_move<R: Rng>(board: &Board, eval: EvalFun, rng: &mut R) -> ChessMov
     best_moves.into_iter().choose(rng).unwrap()
 }
 
+#[derive(Clone)]
 pub struct EvalPlayer {
     eval: EvalFun,
     rng:  ThreadRng

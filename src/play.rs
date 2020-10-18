@@ -1,16 +1,43 @@
 use chess::{Board, BoardStatus, ChessMove, Color};
-use core::ops::Not;
-use crate::pgn;
 
 pub mod random;
 pub mod evaldriven;
+pub mod mc1;
 
 pub trait ChessPlayer {
     fn pick_move(&mut self, board: &Board) -> ChessMove;
 }
 
-pub fn play_game<P1: ChessPlayer, P2: ChessPlayer>(mut white: P1, mut black: P2) {
-    let mut board = Board::default();
+pub struct Game {
+    pub init_board:  Board,
+    pub final_board: Board,
+    pub moves:       Vec<ChessMove>,
+}
+
+impl Game {
+    pub fn is_over(&self) -> bool {
+        self.final_board.status() != BoardStatus::Ongoing
+    }
+
+    pub fn winner(&self) -> Option<Color> {
+        match self.final_board.status() {
+            BoardStatus::Checkmate => Some(!self.final_board.side_to_move()),
+            _                      => None
+        }
+    }
+}
+
+pub fn play_game<P1: ChessPlayer, P2: ChessPlayer>(white: &mut P1, black: &mut P2) -> Game {
+    play_game_from(white, black, Board::default())
+}
+
+pub fn play_game_from<P1: ChessPlayer, P2: ChessPlayer>(
+    white:     &mut P1,
+    black:     &mut P2,
+    start_pos: Board)
+    -> Game
+{
+    let mut board = start_pos.clone();
     let mut move_list = Vec::new();
     let max_moves = 200;
 
@@ -23,21 +50,16 @@ pub fn play_game<P1: ChessPlayer, P2: ChessPlayer>(mut white: P1, mut black: P2)
         board = board.make_move_new(mv);
     }
 
-    println!("{}", pgn::basic_pgn(&move_list));
-    print_end_of_game(&board);
+    return Game {
+        init_board: start_pos,
+        final_board: board,
+        moves: move_list
+    };
 }
 
 #[allow(dead_code)]
 pub fn play_random_game() {
-    let white = random::random_player();
-    let black = random::random_player();
-    play_game(white, black);
-}
-
-fn print_end_of_game(board: &Board) {
-    match board.status() {
-        BoardStatus::Checkmate => println!("Player {:?} wins!", board.side_to_move().not()),
-        BoardStatus::Stalemate => println!("The game is a draw!"),
-        BoardStatus::Ongoing   => println!("Maximum number of moves reached")
-    }
+    let mut white = random::random_player();
+    let mut black = random::random_player();
+    play_game(&mut white, &mut black);
 }
