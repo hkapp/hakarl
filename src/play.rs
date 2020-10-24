@@ -2,7 +2,7 @@ use chess::{Board, BoardStatus, ChessMove, Color};
 
 pub mod random;
 pub mod evaldriven;
-pub mod mc1;
+pub mod montecarlo;
 
 pub trait ChessPlayer {
     fn pick_move(&mut self, board: &Board) -> ChessMove;

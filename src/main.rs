@@ -7,7 +7,7 @@ use play::Game;
 
 fn main() {
     let mut white = play::evaldriven::classic_eval_player();
-    let mut black = play::evaldriven::classic_eval_player(); //play::random::random_player();
+    let mut black = play::montecarlo::basic_monte_carlo1();
 
     let game = play::play_game(&mut white, &mut black);
 
@@ -19,7 +19,7 @@ fn main() {
 
 fn print_end_of_game(game: &Game) {
     match game.final_board.status() {
-        BoardStatus::Checkmate => println!("Player {:?} wins!", game.winner()),
+        BoardStatus::Checkmate => println!("Player {:?} wins!", game.winner().unwrap()),
         BoardStatus::Stalemate => println!("The game is a draw!"),
         BoardStatus::Ongoing   => println!("Maximum number of moves reached")
     }
