@@ -37,6 +37,18 @@ impl Game {
             BoardStatus::Ongoing => None
         }
     }
+
+    pub fn continue_playing<P1: ChessPlayer, P2: ChessPlayer>(
+        &mut self,
+        white:     &mut P1,
+        black:     &mut P2,
+        max_moves: MoveCount)
+    {
+        let mut game_played = play_n_moves(self.final_board, white, black, max_moves);
+
+        self.final_board = game_played.final_board;
+        self.moves.append(&mut game_played.moves);
+    }
 }
 
 pub enum GameResult {

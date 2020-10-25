@@ -89,15 +89,18 @@ fn run_once<P: ChessPlayer, M: MoveEval, R: Rng>(
     let first_move = root_node.moves[move_idx].0;
     let stats_to_update = &mut root_node.moves[move_idx].1;
 
-    let board_after_move = root.init_board.make_move_new(first_move);
-    let game = play::play_n_moves(board_after_move,
-                                  white_rollout,
-                                  black_rollout,
-                                  rollout_depth);
+    let init_board = &root.init_board;
+    let board_after_move = init_board.make_move_new(first_move);
+    let mut game = play::Game {
+        init_board:  init_board.clone(),
+        final_board: board_after_move,
+        moves:       vec![first_move],
+    };
 
-    move_eval.update_stats(stats_to_update,
-                           root.init_board.side_to_move(),
-                           game);
+    game.continue_playing(white_rollout, black_rollout, rollout_depth);
+
+    let player = init_board.side_to_move();
+    move_eval.update_stats(stats_to_update, player, game);
 }
 
 fn print_run_info<M, S>(root:      &Root<S>,

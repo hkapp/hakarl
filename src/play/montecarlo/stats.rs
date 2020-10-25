@@ -10,6 +10,7 @@ use super::RunCount;
 
 pub type Value = f32;
 
+pub type DefaultEval = EvalUndecided;
 
 pub trait MoveEval {
 
@@ -75,8 +76,6 @@ impl<'a, M> MoveEval for &'a mut M
     }
 
 }
-
-pub type DefaultEval = Limits;
 
 /*********** BasicStats *************/
 
@@ -280,8 +279,11 @@ impl std::default::Default for Limits {
 /*********** EvalUndecided *************/
 
 pub struct TraceAverage {
-    tot_value: Value,
-    n_runs:    super::RunCount,
+    n_wins:    RunCount,
+    n_lose:    RunCount,
+    n_draws:   RunCount,
+    draw_eval: Value,
+    n_runs:    RunCount,
 }
 
 pub struct EvalUndecided {
@@ -298,38 +300,58 @@ impl MoveEval for EvalUndecided {
 
     fn new_stats(&self) -> Self::Stats {
         TraceAverage {
-            tot_value: 50.,  /* TODO replace with a constant */
+            n_wins:    0,
+            n_lose:    0,
+            n_draws:   1,
+            draw_eval: 0.,
             n_runs:    1,
         }
-    }
-
-    fn eval(&self, stats: &Self::Stats) -> Value {
-        stats.tot_value / (stats.n_runs as Value)
     }
 
     fn update_stats(&mut self, stats: &mut Self::Stats, player: Color, game: play::Game) {
         let game_result = game.result_for(player).unwrap_or(GameResult::Draw);
 
-        stats.tot_value += match game_result {
-            GameResult::Win  => 100., /* TODO get the value from the evaluation function */
+        match game_result {
+            GameResult::Win  => stats.n_wins += 1,
 
-            GameResult::Lose => 0.,  /* is this good? */
+            GameResult::Lose => stats.n_lose += 1,
 
             GameResult::Draw => {
                 let init_val  = (self.eval_board)(&game.init_board, player);
                 let final_val = (self.eval_board)(&game.final_board, player);
+                let val_diff = (final_val as Value) - (init_val as Value);
 
-                (final_val as Value) - (init_val as Value)
+                stats.draw_eval += val_diff;
+                stats.n_draws += 1;
             }
         };
 
         stats.n_runs += 1;
     }
 
+    fn eval(&self, stats: &Self::Stats) -> Value {
+        let win_part  = 100. * (stats.n_wins as Value);  /* TODO get the constant from the evaluation function */
+        let lose_part = 0.;                     /* TODO re-evaluate this */
+        let draw_part = (50. * (stats.n_draws as Value)) + stats.draw_eval;  /* TODO here too */
+
+        (win_part + lose_part + draw_part) / (stats.n_runs as Value)
+    }
+
 }
 
-//impl fmt::Display for TraceAverage {
-    //fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        //write!(f, "{}", self.0)
-    //}
-//}
+impl std::default::Default for EvalUndecided {
+    fn default() -> Self {
+        EvalUndecided {
+            eval_board: eval::classic_eval,
+        }
+    }
+}
+
+impl fmt::Display for TraceAverage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}W/{}L/{}D({:+.2})", self.n_wins,
+                                       self.n_lose,
+                                       self.n_draws,
+                                       self.draw_eval / (self.n_draws as Value))
+    }
+}
