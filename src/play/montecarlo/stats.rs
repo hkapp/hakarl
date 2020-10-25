@@ -1,5 +1,7 @@
 use chess::Color;
 use crate::play;
+use crate::play::GameResult;
+use crate::eval;
 use std::fmt;
 
 use super::RunCount;
@@ -8,41 +10,78 @@ use super::RunCount;
 
 pub type Value = f32;
 
-pub trait Stats {
 
-    fn new() -> Self;
+pub trait MoveEval {
 
-    fn value(&self) -> Value;
+    type Stats;
 
-    fn update(&mut self, player: Color, game_result: play::Game);
+    fn new_stats(&self) -> Self::Stats;
+
+    fn update_stats(&mut self,
+                    stats:  &mut Self::Stats,
+                    player: Color,
+                    game:   play::Game);
+
+    fn eval(&self, stats: &Self::Stats) -> Value;
 
 }
 
 #[allow(unused_variables)]
-impl<'a, S> Stats for &'a S
-    where S: Stats
+impl<'a, M> MoveEval for &'a M
+    where M: MoveEval
 {
 
-    fn new() -> Self {
-        panic!("Can't implement 'Stats::new()' for &S")
+    type Stats = M::Stats;
+
+    fn new_stats(&self) -> Self::Stats {
+        (*self).new_stats()
     }
 
-    fn value(&self) -> Value {
-        (*self).value()
+    fn update_stats(&mut self,
+                    stats:  &mut Self::Stats,
+                    player: Color,
+                    game:   play::Game)
+    {
+        panic!("Can't implement 'MoveEval::update_stats' for '&S'");
     }
 
-    fn update(&mut self, player: Color, game_result: play::Game) {
-        panic!("Can't implement 'Stats::update()' for &S");
+    fn eval(&self, stats: &Self::Stats) -> Value {
+        (*self).eval(stats)
     }
 
 }
 
-pub type DefaultStats = Limits;
+#[allow(unused_variables)]
+impl<'a, M> MoveEval for &'a mut M
+    where M: MoveEval
+{
+
+    type Stats = M::Stats;
+
+    fn new_stats(&self) -> Self::Stats {
+        M::new_stats(self)
+    }
+
+    fn update_stats(&mut self,
+                    stats:  &mut Self::Stats,
+                    player: Color,
+                    game:   play::Game)
+    {
+        M::update_stats(self, stats, player, game);
+    }
+
+    fn eval(&self, stats: &Self::Stats) -> Value {
+        M::eval(self, stats)
+    }
+
+}
+
+pub type DefaultEval = Limits;
 
 /*********** BasicStats *************/
 
 #[derive(Clone)]
-struct BasicStats {
+pub struct BasicStats {
     /* Wins and losses are with respect to the player who's got to play
      * in the root, not the current node.
      */
@@ -89,27 +128,26 @@ impl fmt::Display for BasicStats {
 
 /*********** WinDrawAverage *************/
 
-pub struct WinDrawAverage(BasicStats);
+pub struct WinDrawAverage;
 
-impl Stats for WinDrawAverage {
+impl MoveEval for WinDrawAverage {
 
-    fn new() -> Self {
-        WinDrawAverage (
-            BasicStats {
-                wins:       0,
-                losses:     0,
-                stalemates: 10,
-                tot_games:  10
-            }
-        )
+    type Stats = BasicStats;
+
+    fn new_stats(&self) -> Self::Stats {
+        BasicStats {
+            wins:       0,
+            losses:     0,
+            stalemates: 10,
+            tot_games:  10
+        }
     }
 
-    fn value(&self) -> Value {
+    fn eval(&self, stats: &Self::Stats) -> Value {
         let win_value   = 5.0;
         let stale_value = 1.0;
         let lose_value  = 0.0;
 
-        let WinDrawAverage(stats) = self;
         let wins       = stats.wins as f32;
         let losses     = stats.losses as f32;
         let stalemates = stats.stalemates as f32;
@@ -122,37 +160,34 @@ impl Stats for WinDrawAverage {
         return tot_value / tot_games;
     }
 
-    fn update(&mut self, player: Color, game_result: play::Game) {
-        self.0.update(player, game_result);
+    fn update_stats(&mut self,
+                    stats:       &mut Self::Stats,
+                    player:      Color,
+                    game_result: play::Game)
+    {
+        stats.update(player, game_result);
     }
 
-}
-
-impl fmt::Display for WinDrawAverage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
 }
 
 /*********** Powers *************/
 
-pub struct Powers(BasicStats);
+pub struct Powers;
 
-impl Stats for Powers {
+impl MoveEval for Powers {
 
-    fn new() -> Self {
-        Powers (
-            BasicStats {
-                wins:       0,
-                losses:     0,
-                stalemates: 0,
-                tot_games:  0
-            }
-        )
+    type Stats = BasicStats;
+
+    fn new_stats(&self) -> Self::Stats {
+        BasicStats {
+            wins:       0,
+            losses:     0,
+            stalemates: 0,
+            tot_games:  0
+        }
     }
 
-    fn value(&self) -> Value {
-        let Powers(stats) = self;
+    fn eval(&self, stats: &Self::Stats) -> Value {
         let w = stats.wins as f32;
         let l = stats.losses as f32;
         let d = stats.stalemates as f32;
@@ -182,37 +217,34 @@ impl Stats for Powers {
         }
     }
 
-    fn update(&mut self, player: Color, game_result: play::Game) {
-        self.0.update(player, game_result);
+    fn update_stats(&mut self,
+                    stats:       &mut Self::Stats,
+                    player:      Color,
+                    game_result: play::Game)
+    {
+        stats.update(player, game_result);
     }
 
-}
-
-impl fmt::Display for Powers {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
 }
 
 /*********** Limits *************/
 
-pub struct Limits(BasicStats);
+pub struct Limits;
 
-impl Stats for Limits {
+impl MoveEval for Limits {
 
-    fn new() -> Self {
-        Limits (
-            BasicStats {
-                wins:       0,
-                losses:     0,
-                stalemates: 1,
-                tot_games:  1
-            }
-        )
+    type Stats = BasicStats;
+
+    fn new_stats(&self) -> Self::Stats {
+        BasicStats {
+            wins:       0,
+            losses:     0,
+            stalemates: 1,
+            tot_games:  1
+        }
     }
 
-    fn value(&self) -> Value {
-        let Limits(stats) = self;
+    fn eval(&self, stats: &Self::Stats) -> Value {
         let w   = stats.wins as f32;
         let l   = stats.losses as f32;
         let d   = stats.stalemates as f32;
@@ -229,106 +261,75 @@ impl Stats for Limits {
         (lim_w + lim_d + lim_l) / tot
     }
 
-    fn update(&mut self, player: Color, game_result: play::Game) {
-        self.0.update(player, game_result);
+    fn update_stats(&mut self,
+                    stats:       &mut Self::Stats,
+                    player:      Color,
+                    game_result: play::Game)
+    {
+        stats.update(player, game_result);
     }
 
 }
 
-impl fmt::Display for Limits {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+impl std::default::Default for Limits {
+    fn default() -> Self {
+        Limits
     }
 }
 
-/*********** Algorithm implementation *************/
+/*********** EvalUndecided *************/
 
+pub struct TraceAverage {
+    tot_value: Value,
+    n_runs:    super::RunCount,
+}
 
-//#[allow(dead_code)]
-//fn chance_to_pick_at_random(stats: &Stats) -> f32 {
-    //// A first tentative as a simple average of classical game scores
-    //fn f1(wins: f32, stalemates: f32, losses: f32, tot_games: f32) -> f32 {
-        //let win_value   = 5.0;
-        //let stale_value = 1.0;
-        //let lose_value  = 0.0;
+pub struct EvalUndecided {
+    eval_board: eval::EvalFun,
+}
+/* this will also require to refactor the Stats trait and split it in two
+ * Separate the Stats and MoveEval part
+ * The MoveEval then stores the configuration of the evaluator
+ */
 
-        //let tot_value = (win_value * wins)
-                        //+ (stale_value * stalemates)
-                        //+ (lose_value * losses);
+impl MoveEval for EvalUndecided {
 
-        //return tot_value / tot_games;
+    type Stats = TraceAverage;
+
+    fn new_stats(&self) -> Self::Stats {
+        TraceAverage {
+            tot_value: 50.,  /* TODO replace with a constant */
+            n_runs:    1,
+        }
+    }
+
+    fn eval(&self, stats: &Self::Stats) -> Value {
+        stats.tot_value / (stats.n_runs as Value)
+    }
+
+    fn update_stats(&mut self, stats: &mut Self::Stats, player: Color, game: play::Game) {
+        let game_result = game.result_for(player).unwrap_or(GameResult::Draw);
+
+        stats.tot_value += match game_result {
+            GameResult::Win  => 100., /* TODO get the value from the evaluation function */
+
+            GameResult::Lose => 0.,  /* is this good? */
+
+            GameResult::Draw => {
+                let init_val  = (self.eval_board)(&game.init_board, player);
+                let final_val = (self.eval_board)(&game.final_board, player);
+
+                (final_val as Value) - (init_val as Value)
+            }
+        };
+
+        stats.n_runs += 1;
+    }
+
+}
+
+//impl fmt::Display for TraceAverage {
+    //fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        //write!(f, "{}", self.0)
     //}
-
-    //// A second attempt based on powers
-    //fn f2(w: f32, d: f32, l: f32) -> f32 {
-        //fn sigma(x: f32, y: f32, d: f32) -> f32 {
-            //fn q(x: f32, d: f32) -> f32 {
-                //fn k(x: f32, d: f32) -> f32 {
-                    //(x + 1.) / (x + d + 1.)
-                //}
-
-                //x + k(x, d)
-            //}
-
-            //fn nu(x: f32, y: f32) -> f32 {
-                //(2. * x) / (x + y)
-            //}
-
-            //q(x, d).powf(nu(x, y))
-        //}
-
-        //let c = 3.;
-        //match (w, d, l) {
-            //(0., _, 0.) => c,
-            //_           => c * (sigma(w, l, d) / sigma(l, w, d))
-        //}
-    //}
-
-    //// A third attempt based on averaging ]0; 1[ values
-    //fn f3(w: f32, d: f32, l: f32, tot: f32) -> f32 {
-        //fn lim(x: f32) -> f32 {
-            //(x + 1.) / (x + 2.)
-        //}
-
-        //let lim_w = w * lim(w);
-        //let lim_l = l * (1. - lim(l));
-        //let lim_d = d / 2.;
-
-        //(lim_w + lim_d + lim_l) / tot
-    //}
-
-    //let w = stats.wins as f32;
-    //let d = stats.stalemates as f32;
-    //let l = stats.losses as f32;
-    //let tot = stats.tot_games as f32;
-
-    //// Here we need to add a discount factor with the length the game in case of win / lose
-    //f3(w, d, l, tot)
-//}
-
-//fn update_stats(stats: &mut Stats, player: Color, game_result: Option<Color>) {
-     // /* The order of field updates will become important once we get to a parallel implementation */
-    //stats.tot_games += 1;
-    //match game_result {
-        //Some(winner) if winner == player     => stats.wins += 1,
-        //Some(_winner) /*if winner != player*/ => stats.losses += 1,
-        //None                                 => stats.stalemates += 1,
-    //};
-//}
-
-
-
-//fn unsafe_cmp_partial_ord<T: PartialOrd>(a: &T, b: &T) -> std::cmp::Ordering {
-    //a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-//}
-
-// /* See https://www.reddit.com/r/rust/comments/29kia3/no_ord_for_f32/ */
-//fn max_by_partial_ord<I, F, B>(iter: I, mut f: F) -> Option<I::Item>
-    //where
-        //I: Iterator,
-        //F: FnMut(&I::Item) -> B,
-        //B: PartialOrd
-//{
-    //iter.max_by(|a, b| unsafe_cmp_partial_ord(&f(a), &f(b)))
-    ////iter.max_by(|a, b| f(a).partial_cmp(&f(b)).unwrap_or(std::cmp::Ordering::Equal))
 //}

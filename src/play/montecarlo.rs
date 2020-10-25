@@ -6,65 +6,40 @@ use rand::Rng;
 use rand::rngs::ThreadRng;
 use rand::distributions::{Distribution, WeightedIndex};
 use crate::play;
+use play::MoveCount;
 use std::time::{Duration, Instant};
 use std::fmt::Display;
 
 mod stats;
-use stats::Stats;
+use stats::MoveEval;
 
 /*********** Structs definition *************/
 
-struct Root<S: Stats> {
+struct Root<S> {
     init_board: Board,
     root_node:  Node<S>,
 }
 
-struct Node<S: Stats> {
+struct Node<S> {
     moves: Vec<(ChessMove, S)>
 }
 
 type RunCount = u16;
 
-//#[derive(Clone)]
-//struct Stats {
-    // /* Wins and losses are with respect to the player who's got to play
-     //* in the root, not the current node.
-     //*/
-    //wins:       RunCount,
-    //losses:     RunCount,
-    //stalemates: RunCount,
-    //tot_games:  RunCount
-//}
-
-fn new_root<S: Stats>(board: &Board) -> Root<S> {
+fn new_root<M: MoveEval>(board: &Board, move_eval: &M) -> Root<M::Stats> {
     Root {
         init_board: board.clone(),
-        root_node:  new_node(board),
+        root_node:  new_node(board, move_eval),
     }
 }
 
-fn new_node<S: Stats>(board: &Board) -> Node<S> {
+fn new_node<M: MoveEval>(board: &Board, move_eval: M) -> Node<M::Stats> {
     let movegen = MoveGen::new_legal(&board);
-    let mv_and_stats = movegen.map(|mv| (mv, S::new())).collect();
+    let mv_and_stats = movegen.map(|mv| (mv, move_eval.new_stats())).collect();
     Node {
         moves: mv_and_stats,
     }
 }
-
-// This value depends on the assumptions made by the current function
-// in chance_to_pick_at_random.
-// When changing the function, also change this value.
-//const STATS_INIT_DRAWS: RunCount = 1;
-//impl std::default::Default for Stats {
-    //fn default() -> Stats {
-        //Stats {
-            //wins:       0,
-            //losses:     0,
-            //stalemates: STATS_INIT_DRAWS,
-            //tot_games:  STATS_INIT_DRAWS
-        //}
-    //}
-//}
 
 /*********** Algorithm implementation *************/
 
@@ -82,14 +57,15 @@ impl Ord for UnsafeOrdF32 {
     }
 }
 
-fn chance_to_pick_at_random<S: Stats>(s: &S) -> stats::Value {
-    s.value()
-}
-
-fn pick_node_move<S: Stats, R: Rng>(node: &Node<S>, rng: &mut R, show_distr: bool) -> usize
+fn pick_node_move<M: MoveEval, R: Rng>(
+    node:       &Node<M::Stats>,
+    move_eval:  &M,
+    rng:        &mut R,
+    show_distr: bool)
+    -> usize
 {
     let weights: Vec<_> = (&node.moves).into_iter()
-                                         .map(|(_, stats)| chance_to_pick_at_random(&stats))
+                                         .map(|(_, stats)| move_eval.eval(&stats))
                                          .collect();
     let weighted_dist = WeightedIndex::new(&weights).unwrap();
     if show_distr {
@@ -99,25 +75,39 @@ fn pick_node_move<S: Stats, R: Rng>(node: &Node<S>, rng: &mut R, show_distr: boo
     weighted_dist.sample(rng)
 }
 
-fn run_once<P: ChessPlayer, S: Stats, R: Rng>(
-    root:          &mut Root<S>,
+fn run_once<P: ChessPlayer, M: MoveEval, R: Rng>(
+    root:          &mut Root<M::Stats>,
+    move_eval:     &mut M,
     black_rollout: &mut P,
     white_rollout: &mut P,
+    rollout_depth: MoveCount,
     rng:           &mut R,
     show_distr:    bool)
 {
     let root_node = &mut root.root_node;
-    let move_idx = pick_node_move(&root_node, rng, show_distr);
+    let move_idx = pick_node_move(&root_node, move_eval, rng, show_distr);
     let first_move = root_node.moves[move_idx].0;
     let stats_to_update = &mut root_node.moves[move_idx].1;
 
     let board_after_move = root.init_board.make_move_new(first_move);
-    let game = play::play_game_from(white_rollout, black_rollout, board_after_move);
+    let game = play::play_n_moves(board_after_move,
+                                  white_rollout,
+                                  black_rollout,
+                                  rollout_depth);
 
-    stats_to_update.update(root.init_board.side_to_move(), game);
+    move_eval.update_stats(stats_to_update,
+                           root.init_board.side_to_move(),
+                           game);
 }
 
-fn print_run_info<S: Stats + Display>(root: &Root<S>, run_dur: Duration, n_runs: RunCount) {
+fn print_run_info<M, S>(root:      &Root<S>,
+                        move_eval: M,
+                        run_dur:   Duration,
+                        n_runs:    RunCount)
+    where
+        M: MoveEval<Stats = S>,
+        S: Display
+{
     let ms_elapsed = run_dur.as_millis();
     println!("Executed {} runs in {}ms", n_runs, ms_elapsed);
     println!("  Average: {:.1} ms per run", (ms_elapsed as f32 / n_runs as f32));
@@ -126,7 +116,7 @@ fn print_run_info<S: Stats + Display>(root: &Root<S>, run_dur: Duration, n_runs:
     //let mut fmt_stats = String::new();
     //let moves = root.root_node.moves.clone();
     let moves = root.root_node.moves.iter();
-    let moves_with_values = moves.map(|(m, s)| (m, s, chance_to_pick_at_random(&s)));
+    let moves_with_values = moves.map(|(m, s)| (m, s, move_eval.eval(&s)));
     //let sorted_moves = moves.map(|(m, s)| (m, s, chance_to_pick_at_random(&s)))
     let mut sorted_moves: Vec<_> = moves_with_values.collect();
     sorted_moves.sort_by_key(|(.., v)| std::cmp::Reverse(UnsafeOrdF32(*v)));
@@ -150,25 +140,38 @@ fn print_run_info<S: Stats + Display>(root: &Root<S>, run_dur: Duration, n_runs:
     }
 }
 
-fn run_monte_carlo_search<P: ChessPlayer, S: Stats + Display, R: Rng>(
+fn run_monte_carlo_search<P, M, S, R>(
     board:          &Board,
+    move_eval:      &mut M,
     time_budget:    Duration,
     white_rollout:  &mut P,
     black_rollout:  &mut P,
+    rollout_depth:  MoveCount,
     rng:            &mut R)
     -> Root<S>
+    where
+        P: ChessPlayer,
+        M: MoveEval<Stats = S>,
+        S: Display,
+        R: Rng
 {
     let start_time = Instant::now();
     let show_distr = false;/*rng.gen_range(0, 20) == 0;*/
     let mut n_runs = 0;
 
-    let mut root = new_root(board);
+    let mut root = new_root(board, move_eval);
     while start_time.elapsed() < time_budget {
-        run_once(&mut root, white_rollout, black_rollout, rng, show_distr);
+        run_once(&mut root,
+                 move_eval,
+                 white_rollout,
+                 black_rollout,
+                 rollout_depth,
+                 rng,
+                 show_distr);
         n_runs += 1;
     }
 
-    print_run_info(&root, start_time.elapsed(), n_runs);
+    print_run_info(&root, move_eval, start_time.elapsed(), n_runs);
 
     return root;
 }
@@ -188,48 +191,69 @@ fn max_by_partial_ord<I, F, B>(iter: I, mut f: F) -> Option<I::Item>
     //iter.max_by(|a, b| f(a).partial_cmp(&f(b)).unwrap_or(std::cmp::Ordering::Equal))
 }
 
-fn pick_best_move<S: Stats>(root: &Root<S>) -> ChessMove {
+fn pick_best_move<M: MoveEval>(root: &Root<M::Stats>, move_eval: M) -> ChessMove {
     /* f32 does not implement Ord, only PartialOrd */
     max_by_partial_ord(
         (&root.root_node.moves).into_iter(),
-        |(_mv, stats)| chance_to_pick_at_random(&stats)
+        |(_mv, stats)| move_eval.eval(&stats)
     ).unwrap().0
 }
 
 /*********** ChessPlayer definition *************/
 
-pub struct MonteCarlo1<P: ChessPlayer, R: Rng> {
+pub struct MonteCarlo1<P: ChessPlayer, M: MoveEval, R: Rng> {
     white_rollout: P,
     black_rollout: P,
+    rollout_depth: MoveCount,
+    move_eval:     M,
     time_budget:   Duration,
-    rng:           R
+    rng:           R,
 }
 
-impl<P: ChessPlayer, R: Rng> ChessPlayer for MonteCarlo1<P, R> {
+impl<P, M, S, R> ChessPlayer for MonteCarlo1<P, M, R>
+    where
+        P: ChessPlayer,
+        M: MoveEval<Stats = S>,
+        S: Display,
+        R: Rng
+{
     fn pick_move(&mut self, board: &Board) -> ChessMove {
-        let res_root = run_monte_carlo_search::<_, stats::DefaultStats, _>(board,
-                                              self.time_budget,
-                                              &mut self.white_rollout,
-                                              &mut self.black_rollout,
-                                              &mut self.rng);
-        pick_best_move(&res_root)
+        let res_root =
+            run_monte_carlo_search(
+                board,
+                &mut self.move_eval,
+                self.time_budget,
+                &mut self.white_rollout,
+                &mut self.black_rollout,
+                self.rollout_depth,
+                &mut self.rng);
+
+        pick_best_move(&res_root, &self.move_eval)
     }
 }
 
 /*********** Constructors *************/
 
-pub fn monte_carlo1<P: ChessPlayer + Clone>(rollout_player: P, time_budget: Duration)
-    -> MonteCarlo1<P, ThreadRng>
+pub fn monte_carlo1<P: ChessPlayer + Clone>(
+    rollout_player: P,
+    time_budget:    Duration,
+    rollout_depth:  MoveCount)
+    -> MonteCarlo1<P, stats::DefaultEval, ThreadRng>
 {
-    MonteCarlo1::<P, _> {
+    MonteCarlo1::<P, _, _> {
         white_rollout: rollout_player.clone(),
         black_rollout: rollout_player,
+        move_eval:     stats::DefaultEval::default(),
+        rollout_depth,
         time_budget,
-        rng: rand::thread_rng()
+        rng: rand::thread_rng(),
     }
 }
 
-pub fn basic_monte_carlo1() -> MonteCarlo1<EvalPlayer, ThreadRng> {
-    let time_budget = Duration::from_millis(500);
-    monte_carlo1(evaldriven::classic_eval_player(), time_budget)
+const DEFAULT_TIME_BUDGET: Duration = Duration::from_millis(500);
+const DEFAULT_ROLLOUT_DEPTH: MoveCount = 2*20;
+pub fn basic_monte_carlo1() -> MonteCarlo1<EvalPlayer, stats::DefaultEval, ThreadRng> {
+    monte_carlo1(evaldriven::classic_eval_player(),
+                 DEFAULT_TIME_BUDGET,
+                 DEFAULT_ROLLOUT_DEPTH)
 }

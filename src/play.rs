@@ -25,21 +25,52 @@ impl Game {
             _                      => None
         }
     }
+
+    pub fn result_for(&self, player: Color) -> Option<GameResult> {
+        match self.final_board.status() {
+            BoardStatus::Checkmate =>
+                if self.final_board.side_to_move() != player { Some(GameResult::Win) }
+                else { Some(GameResult::Lose) },
+
+            BoardStatus::Stalemate => Some(GameResult::Draw),
+
+            BoardStatus::Ongoing => None
+        }
+    }
+}
+
+pub enum GameResult {
+    Win,
+    Draw,
+    Lose,
 }
 
 pub fn play_game<P1: ChessPlayer, P2: ChessPlayer>(white: &mut P1, black: &mut P2) -> Game {
-    play_game_from(white, black, Board::default())
+    play_game_from(Board::default(), white, black)
 }
 
+const DEFAULT_MAX_MOVES: MoveCount = 200; /* 100 turns */
 pub fn play_game_from<P1: ChessPlayer, P2: ChessPlayer>(
+    start_pos: Board,
+    white:     &mut P1,
+    black:     &mut P2)
+    -> Game
+{
+    play_n_moves(start_pos, white, black, DEFAULT_MAX_MOVES)
+}
+
+type MoveCount = u8;
+
+pub fn play_n_moves<P1: ChessPlayer, P2: ChessPlayer>(
+    start_pos: Board,
     white:     &mut P1,
     black:     &mut P2,
-    start_pos: Board)
+    max_moves: MoveCount)
     -> Game
 {
     let mut board = start_pos.clone();
     let mut move_list = Vec::new();
-    let max_moves = 200;
+    let max_moves = max_moves as usize;  /* convenience cast */
 
     while board.status() == BoardStatus::Ongoing && move_list.len() < max_moves {
         let mv = match board.side_to_move() {
