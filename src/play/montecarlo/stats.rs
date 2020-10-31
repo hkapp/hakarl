@@ -1,7 +1,8 @@
-use chess::Color;
+use chess::{Color, BoardStatus};
 use crate::play;
-use crate::play::GameResult;
+use crate::play::{Game, GameResult};
 use crate::eval;
+use eval::EvalFun;
 use std::fmt;
 
 use super::RunCount;
@@ -10,7 +11,7 @@ use super::RunCount;
 
 pub type Value = f32;
 
-pub type DefaultEval = EvalUndecided;
+pub type DefaultEval = EvalTrace;
 
 pub trait MoveEval {
 
@@ -350,8 +351,187 @@ impl std::default::Default for EvalUndecided {
 impl fmt::Display for TraceAverage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}W/{}L/{}D({:+.2})", self.n_wins,
-                                       self.n_lose,
-                                       self.n_draws,
-                                       self.draw_eval / (self.n_draws as Value))
+                                         self.n_lose,
+                                         self.n_draws,
+                                         self.draw_eval / (self.n_draws as Value))
+    }
+}
+/*********** EvalTrace *************/
+
+struct TraceStat {
+    tot_value: Value,
+    n_runs:    RunCount,
+}
+
+pub struct TraceStats {
+    wins:     TraceStat,
+    losses:   TraceStat,
+    draws:    TraceStat,
+    tot_runs: RunCount,
+}
+
+impl TraceStat {
+    fn update(&mut self, player: Color, game: Game, eval_fun: EvalFun, discount_factor: f32) {
+        let mut game_val = DiscountAvg::new(discount_factor);
+
+        for (board, _mv) in play::replay_game(game) {
+            let board_val = match board.status() {
+                BoardStatus::Ongoing => 50. + (eval_fun(&board, player) as f32),
+                BoardStatus::Stalemate => 50.,
+                BoardStatus::Checkmate =>
+                    if board.side_to_move() != player { 100. }
+                    else { 0. }
+            };
+
+            game_val.add(board_val);
+        }
+
+        self.tot_value += game_val.avg();
+        //let mut game_val = 0.;
+        //let mut curr_discount = 1.;
+        //let mut discount_sum = 0.;
+
+        //for (board, _mv) in play::replay_game(game) {
+            //let board_val = match board.status() {
+                //BoardStatus::Ongoing => 50. + (eval_fun(&board, player) as f32),
+                //BoardStatus::Stalemate => 50.,
+                //BoardStatus::Checkmate =>
+                    //if board.side_to_move() != player { 100. }
+                    //else { 0. }
+            //}
+            //game_val += board_val * curr_discount;
+            //discount_sum += curr_discount;
+            //curr_discount *= discount_factor;
+        //}
+
+        //self.tot_value += (game_val / discount_sum);
+        self.n_runs += 1;
+    }
+}
+
+impl std::default::Default for TraceStat {
+    fn default() -> Self {
+        TraceStat {
+            tot_value: 0.,
+            n_runs:    0,
+        }
+    }
+}
+
+impl TraceStats {
+    fn update(&mut self, player: Color, game: Game, eval_fun: EvalFun, discount_factor: f32) {
+
+        let game_result = game.result_for(player).unwrap_or(GameResult::Draw);
+
+        let corr_trc = match game_result {
+            GameResult::Win  => &mut self.wins,
+            GameResult::Lose => &mut self.losses,
+            GameResult::Draw => &mut self.draws,
+        };
+        corr_trc.update(player, game, eval_fun, discount_factor);
+
+        self.tot_runs += 1;
+    }
+}
+
+pub struct EvalTrace {
+    eval_board:      eval::EvalFun,
+    discount_factor: f32
+}
+/* this will also require to refactor the Stats trait and split it in two
+ * Separate the Stats and MoveEval part
+ * The MoveEval then stores the configuration of the evaluator
+ */
+
+struct DiscountAvg {
+    curr_sum:        f32,
+    curr_discount:   f32,
+    discount_sum:    f32,
+    discount_factor: f32
+}
+
+impl DiscountAvg {
+    fn new(discount_factor: f32) -> Self {
+        DiscountAvg {
+            curr_sum:        0.,
+            curr_discount:   1.,
+            discount_sum:    0.,
+            discount_factor: discount_factor
+        }
+    }
+
+    fn add(&mut self, val: f32) {
+        self.curr_sum += (self.curr_discount * val);
+        self.discount_sum += self.curr_discount;
+        self.curr_discount *= self.discount_factor;
+    }
+
+    fn avg(&self) -> f32 {
+        self.curr_sum / self.discount_sum
+    }
+}
+
+impl MoveEval for EvalTrace {
+
+    type Stats = TraceStats;
+
+    fn new_stats(&self) -> Self::Stats {
+        let default_draw_stats = TraceStat {
+            tot_value: 50.,
+            n_runs:    1
+        };
+
+        TraceStats {
+            wins:     TraceStat::default(),
+            losses:   TraceStat::default(),
+            draws:    default_draw_stats,
+            tot_runs: 1
+        }
+    }
+
+    fn update_stats(&mut self, stats: &mut Self::Stats, player: Color, game: play::Game) {
+        stats.update(player, game, self.eval_board, self.discount_factor);
+    }
+
+    fn eval(&self, stats: &Self::Stats) -> Value {
+        fn part_of(trc: &TraceStat) -> Value {
+            trc.tot_value //* (trc.n_runs as Value)
+        }
+
+        let win_part  = part_of(&stats.wins);
+        let lose_part = part_of(&stats.losses);
+        let draw_part = part_of(&stats.draws);
+
+        (win_part + lose_part + draw_part) / (stats.tot_runs as Value)
+    }
+
+}
+
+const DEFAULT_DISCOUNT_FACTOR: f32 = 0.90;
+impl std::default::Default for EvalTrace {
+    fn default() -> Self {
+        EvalTrace {
+            eval_board:      eval::classic_eval,
+            discount_factor: DEFAULT_DISCOUNT_FACTOR,
+        }
+    }
+}
+
+impl fmt::Display for TraceStats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn fmt_trace(trc: &TraceStat, ind: char, is_last: bool, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let mut res = write!(f, "{}{}", trc.n_runs, ind);
+            if trc.n_runs > 0 {
+                res = write!(f, " ({:.2})", trc.tot_value / (trc.n_runs as Value));
+            }
+            if !is_last {
+                res = write!(f, " ");
+            }
+            res
+        }
+
+        fmt_trace(&self.wins,   'W', false, f);
+        fmt_trace(&self.losses, 'L', false, f);
+        fmt_trace(&self.draws,  'D', true,  f)
     }
 }

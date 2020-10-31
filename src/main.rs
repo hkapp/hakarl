@@ -1,13 +1,17 @@
 mod pgn;
 mod eval;
 mod play;
+mod utils;
 
 use chess::BoardStatus;
 use play::Game;
 
 fn main() {
-    let mut white = play::evaldriven::classic_eval_player();
-    let mut black = play::montecarlo::basic_monte_carlo1();
+    //let mut white = play::evaldriven::classic_eval_player();
+    //let mut white = play::montecarlo::basic_monte_carlo1();
+    //let mut white = play::evaldriven::classic_eval_player();
+    let mut white = play::exhaustive::exhaustive_search_player(3);
+    let mut black = play::exhaustive::exhaustive_search_player(3);
 
     let game = play::play_game(&mut white, &mut black);
 
