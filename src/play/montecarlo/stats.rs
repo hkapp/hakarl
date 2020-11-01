@@ -460,6 +460,7 @@ impl DiscountAvg {
         }
     }
 
+    #[allow(unused_parens)]
     fn add(&mut self, val: f32) {
         self.curr_sum += (self.curr_discount * val);
         self.discount_sum += self.curr_discount;

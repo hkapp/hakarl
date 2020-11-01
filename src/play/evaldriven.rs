@@ -34,6 +34,7 @@ pub fn eval_driven_player(eval: EvalFun) -> EvalPlayer {
     }
 }
 
+#[allow(dead_code)]
 pub fn classic_eval_player() -> EvalPlayer {
     eval_driven_player(eval::classic_eval)
 }

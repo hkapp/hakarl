@@ -255,6 +255,7 @@ pub fn monte_carlo1<P: ChessPlayer + Clone>(
 
 const DEFAULT_TIME_BUDGET: Duration = Duration::from_millis(500);
 const DEFAULT_ROLLOUT_DEPTH: MoveCount = 2*20;
+#[allow(dead_code)]
 pub fn basic_monte_carlo1() -> MonteCarlo1<EvalPlayer, stats::DefaultEval, ThreadRng> {
     monte_carlo1(evaldriven::classic_eval_player(),
                  DEFAULT_TIME_BUDGET,

@@ -10,8 +10,8 @@ fn main() {
     //let mut white = play::evaldriven::classic_eval_player();
     //let mut white = play::montecarlo::basic_monte_carlo1();
     //let mut white = play::evaldriven::classic_eval_player();
-    let mut white = play::exhaustive::exhaustive_search_player(3);
-    let mut black = play::exhaustive::exhaustive_search_player(3);
+    let mut white = play::exhaustive::exhaustive_search_player(2);
+    let mut black = play::astar::astar_player();
 
     let game = play::play_game(&mut white, &mut black);
 

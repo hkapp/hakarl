@@ -4,6 +4,8 @@ pub mod random;
 pub mod evaldriven;
 pub mod montecarlo;
 pub mod exhaustive;
+pub mod astar;
+mod searchtree;
 
 pub trait ChessPlayer {
     fn pick_move(&mut self, board: &Board) -> ChessMove;
@@ -16,6 +18,7 @@ pub struct Game {
 }
 
 impl Game {
+    #[allow(dead_code)]
     pub fn is_over(&self) -> bool {
         self.final_board.status() != BoardStatus::Ongoing
     }
