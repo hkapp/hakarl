@@ -1,6 +1,7 @@
 use core::cmp::Ordering;
 
 pub mod iter;
+pub mod display;
 
 /* Simple key-value type, ordered by key */
 
@@ -35,6 +36,17 @@ impl<K, V> Ord for OrdBy<K, V>
         self.ord_key.cmp(&other.ord_key)
     }
 }
+
+/* A simple key-value, that isn't ordered */
+
+pub struct KeyValue<K, V> {
+    pub key:   K,
+    pub value: V
+}
+
+/* Stacks should be implemented using Vec */
+
+pub type Stack<T> = Vec<T>;
 
 /* Either */
 
