@@ -1,4 +1,5 @@
 use chess::{Board, BoardStatus, ChessMove, Color};
+use crate::utils;
 
 pub mod random;
 pub mod evaldriven;
@@ -104,54 +105,8 @@ pub fn play_n_moves<P1: ChessPlayer, P2: ChessPlayer>(
     };
 }
 
-#[allow(dead_code)]
-pub fn play_random_game() {
-    let mut white = random::random_player();
-    let mut black = random::random_player();
-    play_game(&mut white, &mut black);
-}
-
-pub struct FoldMap<S, I, F> {
-    state:     S,
-    iter:      I,
-    upd_state: F
-}
-
-pub fn stateful_map<S, I, F>(init_state: S, iter: I, upd_state: F) -> FoldMap<S, I, F>
-    where
-        I: Iterator,
-        F: FnMut(&S, &I::Item) -> S,
-        S: Clone
-{
-    FoldMap {
-        state: init_state,
-        iter,
-        upd_state
-    }
-}
-
-impl<S, I, F> Iterator for FoldMap<S, I, F>
-    where
-        I: Iterator,
-        F: FnMut(&S, &I::Item) -> S,
-        S: Clone
-{
-    type Item = (S, I::Item);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.iter.next() {
-            Some(a) => {
-                self.state = (self.upd_state)(&self.state, &a);
-                Some((self.state.clone(), a))
-            }
-
-            None => None
-        }
-    }
-}
-
 pub fn replay_game(game: Game) -> impl Iterator<Item = (Board, ChessMove)> {
-    stateful_map(
+    utils::iter::stateful_map(
         game.init_board,
         game.moves.into_iter(),
         |board, mv| board.make_move_new(*mv)

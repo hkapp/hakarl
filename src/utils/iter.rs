@@ -1,4 +1,5 @@
 
+/* Get all the max values */
 
 pub fn all_maxs_by_key<B, F, I>(mut iter: I, mut f: F) -> Vec<I::Item>
     where
@@ -31,4 +32,45 @@ pub fn all_maxs_by_key<B, F, I>(mut iter: I, mut f: F) -> Vec<I::Item>
     }
 
     return max_items;
+}
+
+/* Implementation of a stateful map */
+
+pub struct FoldMap<S, I, F> {
+    state:     S,
+    iter:      I,
+    upd_state: F
+}
+
+pub fn stateful_map<S, I, F>(init_state: S, iter: I, upd_state: F) -> FoldMap<S, I, F>
+    where
+        I: Iterator,
+        F: FnMut(&S, &I::Item) -> S,
+        S: Clone
+{
+    FoldMap {
+        state: init_state,
+        iter,
+        upd_state
+    }
+}
+
+impl<S, I, F> Iterator for FoldMap<S, I, F>
+    where
+        I: Iterator,
+        F: FnMut(&S, &I::Item) -> S,
+        S: Clone
+{
+    type Item = (S, I::Item);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.iter.next() {
+            Some(a) => {
+                self.state = (self.upd_state)(&self.state, &a);
+                Some((self.state.clone(), a))
+            }
+
+            None => None
+        }
+    }
 }

@@ -15,14 +15,7 @@ pub struct RandomPlayer<R: Rng> {
     rng: R
 }
 
-//impl<R: Rng> RandomPlayer<R> {
-    //fn new() -> RandomPlayer<rand::rngs::ThreadRng> {
-        //RandomPlayer {
-            //rng: rand::thread_rng()
-        //}
-    //}
-//}
-
+#[allow(dead_code)]
 pub fn random_player() -> RandomPlayer<rand::rngs::ThreadRng> {
     RandomPlayer {
         rng: rand::thread_rng()

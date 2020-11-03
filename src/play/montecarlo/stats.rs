@@ -531,8 +531,8 @@ impl fmt::Display for TraceStats {
             res
         }
 
-        fmt_trace(&self.wins,   'W', false, f);
-        fmt_trace(&self.losses, 'L', false, f);
-        fmt_trace(&self.draws,  'D', true,  f)
+        fmt_trace(&self.wins,   'W', false, f)
+            .and_then(|_| fmt_trace(&self.losses, 'L', false, f))
+            .and_then(|_| fmt_trace(&self.draws,  'D', true,  f))
     }
 }

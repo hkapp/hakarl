@@ -14,17 +14,17 @@ const LOSING_SCORE:  Score = Score::MIN;
 
 pub type EvalFun = fn (&Board, Color) -> Score;
 
-trait EvalFun2 {
-    type Score2: std::cmp::PartialOrd;
+//trait EvalFun2 {
+    //type Score2: std::cmp::PartialOrd;
 
-    fn eval(board: &Board, color: Color) -> Self::Score2;
-}
+    //fn eval(board: &Board, color: Color) -> Self::Score2;
+//}
 
-struct EvalFun3 {
-    eval: fn (&Board, Color) -> Score,
-    max_score: Score,
-    min_score: Score,
-}
+//struct EvalFun3 {
+    //eval: fn (&Board, Color) -> Score,
+    //max_score: Score,
+    //min_score: Score,
+//}
 
 fn piece_value(piece: Piece) -> Score {
     match piece {
