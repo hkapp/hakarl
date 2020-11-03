@@ -40,7 +40,7 @@ pub fn classic_eval_player() -> EvalPlayer {
 }
 
 impl ChessPlayer for EvalPlayer {
-    fn pick_move(&mut self, board: &Board) -> ChessMove {
+    fn pick_move(&mut self, board: &Board, _logger: &mut super::Logger) -> ChessMove {
         pick_best_move(board, self.eval, &mut self.rng)
     }
 }

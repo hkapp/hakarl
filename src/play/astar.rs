@@ -16,7 +16,7 @@ pub struct AStar {
 }
 
 impl ChessPlayer for AStar {
-    fn pick_move(&mut self, board: &Board) -> ChessMove {
+    fn pick_move(&mut self, board: &Board, _logger: &mut super::Logger) -> ChessMove {
         astar_search(board, self.eval, self.time_budget)
     }
 }

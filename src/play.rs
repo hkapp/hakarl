@@ -8,8 +8,10 @@ pub mod exhaustive;
 pub mod astar;
 mod searchtree;
 
+pub type Logger = dyn std::io::Write;
+
 pub trait ChessPlayer {
-    fn pick_move(&mut self, board: &Board) -> ChessMove;
+    fn pick_move(&mut self, board: &Board, logger: &mut Logger) -> ChessMove;
 }
 
 pub struct Game {
@@ -47,9 +49,10 @@ impl Game {
         &mut self,
         white:     &mut P1,
         black:     &mut P2,
-        max_moves: MoveCount)
+        max_moves: MoveCount,
+        logger:    &mut Logger)
     {
-        let mut game_played = play_n_moves(self.final_board, white, black, max_moves);
+        let mut game_played = play_n_moves(self.final_board, white, black, max_moves, logger);
 
         self.final_board = game_played.final_board;
         self.moves.append(&mut game_played.moves);
@@ -62,18 +65,24 @@ pub enum GameResult {
     Lose,
 }
 
-pub fn play_game<P1: ChessPlayer, P2: ChessPlayer>(white: &mut P1, black: &mut P2) -> Game {
-    play_game_from(Board::default(), white, black)
+pub fn play_game<P1: ChessPlayer, P2: ChessPlayer>(
+    white:  &mut P1,
+    black:  &mut P2,
+    logger: &mut Logger)
+    -> Game
+{
+    play_game_from(Board::default(), white, black, logger)
 }
 
 const DEFAULT_MAX_MOVES: MoveCount = 200; /* 100 turns */
 pub fn play_game_from<P1: ChessPlayer, P2: ChessPlayer>(
     start_pos: Board,
     white:     &mut P1,
-    black:     &mut P2)
+    black:     &mut P2,
+    logger:    &mut Logger)
     -> Game
 {
-    play_n_moves(start_pos, white, black, DEFAULT_MAX_MOVES)
+    play_n_moves(start_pos, white, black, DEFAULT_MAX_MOVES, logger)
 }
 
 type MoveCount = u8;
@@ -82,7 +91,8 @@ pub fn play_n_moves<P1: ChessPlayer, P2: ChessPlayer>(
     start_pos: Board,
     white:     &mut P1,
     black:     &mut P2,
-    max_moves: MoveCount)
+    max_moves: MoveCount,
+    logger:    &mut Logger)
     -> Game
 {
     let mut board = start_pos.clone();
@@ -91,8 +101,8 @@ pub fn play_n_moves<P1: ChessPlayer, P2: ChessPlayer>(
 
     while board.status() == BoardStatus::Ongoing && move_list.len() < max_moves {
         let mv = match board.side_to_move() {
-            Color::White => white.pick_move(&board),
-            Color::Black => black.pick_move(&board)
+            Color::White => white.pick_move(&board, logger),
+            Color::Black => black.pick_move(&board, logger)
         };
         move_list.push(mv);
         board = board.make_move_new(mv);

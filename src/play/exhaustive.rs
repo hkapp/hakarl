@@ -13,25 +13,28 @@ pub struct ExhaustiveSearch {
     rng:   ThreadRng
 }
 
+#[allow(unused_must_use)]
 impl ChessPlayer for ExhaustiveSearch {
-    fn pick_move(&mut self, board: &Board) -> ChessMove {
-        println!();
-        print!("{{start:{}, ", (self.eval)(board, board.side_to_move()));
+    fn pick_move(&mut self, board: &Board, logger: &mut super::Logger) -> ChessMove {
+        write!(logger, "\n{{start:{}, ", (self.eval)(board, board.side_to_move()));
         let (best_move, _best_board) = exhaustive_search(board,
                                                          self.eval,
                                                          self.depth,
-                                                         &mut self.rng);
-        println!("}}");
-        println!("Best move: {}", best_move);
+                                                         &mut self.rng,
+                                                         logger);
+        writeln!(logger, "}}");
+        writeln!(logger, "Best move: {}", best_move);
         return best_move;
     }
 }
 
+#[allow(unused_must_use)]
 fn exhaustive_search<R: Rng>(
     board:    &Board,
     eval_fun: EvalFun,
     depth:    MoveCount,
-    rng:      &mut R)
+    rng:      &mut R,
+    logger:   &mut super::Logger)
     -> (ChessMove, Board)
 {
     let base_case = |mv| board.make_move_new(mv);
@@ -41,9 +44,9 @@ fn exhaustive_search<R: Rng>(
 
         match next_board.status() {
             BoardStatus::Ongoing => {
-                print!("{}:{{", mv);
-                let r = exhaustive_search(&next_board, eval_fun, depth-1, rng).1;
-                print!("}}, ");
+                write!(logger, "{}:{{", mv);
+                let r = exhaustive_search(&next_board, eval_fun, depth-1, rng, logger).1;
+                write!(logger, "}}, ");
                 r
             }
             _                    => next_board  // stop recursion if game is over
@@ -56,10 +59,11 @@ fn exhaustive_search<R: Rng>(
 
     let player = board.side_to_move();
 
-    let board_and_moves = MoveGen::new_legal(board).map(|mv| (mv, board_for(mv)));
+    /* Here we need to collect to avoid multiple mutable borrows of the logger by the closures */
+    let board_and_moves: Vec<_> = MoveGen::new_legal(board).map(|mv| (mv, board_for(mv))).collect();
 
-    let best_moves = utils::iter::all_maxs_by_key(board_and_moves,
-                                                  |(mv, new_board)| { let v = eval_fun(new_board, player); print!("{}:{}, ", mv, v); v });
+    let best_moves = utils::iter::all_maxs_by_key(board_and_moves.into_iter(),
+                                                  |(mv, new_board)| { let v = eval_fun(new_board, player); write!(logger, "{}:{}, ", mv, v); v });
     best_moves.into_iter()
               .choose(rng)
               .unwrap()

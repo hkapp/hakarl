@@ -57,20 +57,21 @@ impl Ord for UnsafeOrdF32 {
     }
 }
 
+#[allow(unused_must_use)]
 fn pick_node_move<M: MoveEval, R: Rng>(
     node:       &Node<M::Stats>,
     move_eval:  &M,
     rng:        &mut R,
-    show_distr: bool)
+    log_distr:  Option<&mut super::Logger>)
     -> usize
 {
     let weights: Vec<_> = (&node.moves).into_iter()
                                          .map(|(_, stats)| move_eval.eval(&stats))
                                          .collect();
     let weighted_dist = WeightedIndex::new(&weights).unwrap();
-    if show_distr {
-        println!("Distribution: {:?}", weighted_dist);
-    }
+
+    log_distr.map(|logger|
+        writeln!(logger, "Distribution: {:?}", weighted_dist));
 
     weighted_dist.sample(rng)
 }
@@ -82,10 +83,10 @@ fn run_once<P: ChessPlayer, M: MoveEval, R: Rng>(
     white_rollout: &mut P,
     rollout_depth: MoveCount,
     rng:           &mut R,
-    show_distr:    bool)
+    log_distr:     Option<&mut super::Logger>)
 {
     let root_node = &mut root.root_node;
-    let move_idx = pick_node_move(&root_node, move_eval, rng, show_distr);
+    let move_idx = pick_node_move(&root_node, move_eval, rng, log_distr);
     let first_move = root_node.moves[move_idx].0;
     let stats_to_update = &mut root_node.moves[move_idx].1;
 
@@ -97,24 +98,27 @@ fn run_once<P: ChessPlayer, M: MoveEval, R: Rng>(
         moves:       vec![first_move],
     };
 
-    game.continue_playing(white_rollout, black_rollout, rollout_depth);
+    let mut rollout_logger = std::io::sink();  // ignore any output
+    game.continue_playing(white_rollout, black_rollout, rollout_depth, &mut rollout_logger);
 
     let player = init_board.side_to_move();
     move_eval.update_stats(stats_to_update, player, game);
 }
 
+#[allow(unused_must_use)]
 fn print_run_info<M, S>(root:      &Root<S>,
                         move_eval: M,
                         run_dur:   Duration,
-                        n_runs:    RunCount)
+                        n_runs:    RunCount,
+                        logger:    &mut super::Logger)
     where
         M: MoveEval<Stats = S>,
         S: Display
 {
     let ms_elapsed = run_dur.as_millis();
-    println!("Executed {} runs in {}ms", n_runs, ms_elapsed);
-    println!("  Average: {:.1} ms per run", (ms_elapsed as f32 / n_runs as f32));
-    println!("           {:.1} runs per second", (n_runs as f32 / ms_elapsed as f32) * 1000.);
+    writeln!(logger, "Executed {} runs in {}ms", n_runs, ms_elapsed);
+    writeln!(logger, "  Average: {:.1} ms per run", (ms_elapsed as f32 / n_runs as f32));
+    writeln!(logger, "           {:.1} runs per second", (n_runs as f32 / ms_elapsed as f32) * 1000.);
 
     //let mut fmt_stats = String::new();
     //let moves = root.root_node.moves.clone();
@@ -128,18 +132,18 @@ fn print_run_info<M, S>(root:      &Root<S>,
     //let mut left_padding = String::from("  ");
     let print_count = 3;
 
-    println!("  Best moves:");
+    writeln!(logger, "  Best moves:");
     for (mv, stats, mv_value) in sorted_moves.iter().take(print_count) {
-        println!("    [{}] {} ~> {}", mv, stats, mv_value);
+        writeln!(logger, "    [{}] {} ~> {}", mv, stats, mv_value);
     }
 
-    println!("  Worst moves:");
+    writeln!(logger, "  Worst moves:");
     for (mv, stats, mv_value) in sorted_moves.iter()
                                              .rev()
                                              .take(print_count)
                                              .rev()
     {
-        println!("    [{}] {} ~> {}", mv, stats, mv_value);
+        writeln!(logger, "    [{}] {} ~> {}", mv, stats, mv_value);
     }
 }
 
@@ -150,7 +154,8 @@ fn run_monte_carlo_search<P, M, S, R>(
     white_rollout:  &mut P,
     black_rollout:  &mut P,
     rollout_depth:  MoveCount,
-    rng:            &mut R)
+    rng:            &mut R,
+    logger:         &mut super::Logger)
     -> Root<S>
     where
         P: ChessPlayer,
@@ -159,11 +164,12 @@ fn run_monte_carlo_search<P, M, S, R>(
         R: Rng
 {
     let start_time = Instant::now();
-    let show_distr = false;/*rng.gen_range(0, 20) == 0;*/
     let mut n_runs = 0;
 
     let mut root = new_root(board, move_eval);
     while start_time.elapsed() < time_budget {
+        let show_distr = None;/*rng.gen_range(0, 20) == 0;*/
+
         run_once(&mut root,
                  move_eval,
                  white_rollout,
@@ -171,10 +177,11 @@ fn run_monte_carlo_search<P, M, S, R>(
                  rollout_depth,
                  rng,
                  show_distr);
+
         n_runs += 1;
     }
 
-    print_run_info(&root, move_eval, start_time.elapsed(), n_runs);
+    print_run_info(&root, move_eval, start_time.elapsed(), n_runs, logger);
 
     return root;
 }
@@ -220,7 +227,7 @@ impl<P, M, S, R> ChessPlayer for MonteCarlo1<P, M, R>
         S: Display,
         R: Rng
 {
-    fn pick_move(&mut self, board: &Board) -> ChessMove {
+    fn pick_move(&mut self, board: &Board, logger: &mut super::Logger) -> ChessMove {
         let res_root =
             run_monte_carlo_search(
                 board,
@@ -229,7 +236,8 @@ impl<P, M, S, R> ChessPlayer for MonteCarlo1<P, M, R>
                 &mut self.white_rollout,
                 &mut self.black_rollout,
                 self.rollout_depth,
-                &mut self.rng);
+                &mut self.rng,
+                logger);
 
         pick_best_move(&res_root, &self.move_eval)
     }

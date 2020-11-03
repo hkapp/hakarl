@@ -23,7 +23,7 @@ pub fn random_player() -> RandomPlayer<rand::rngs::ThreadRng> {
 }
 
 impl<R: Rng> ChessPlayer for RandomPlayer<R> {
-    fn pick_move(&mut self, board: &Board) -> ChessMove {
+    fn pick_move(&mut self, board: &Board, _logger: &mut super::Logger) -> ChessMove {
         pick_random_move(board, &mut self.rng)
     }
 }
