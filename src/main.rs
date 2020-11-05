@@ -9,8 +9,13 @@ use play::Game;
 use std::fs::File;
 use std::path::Path;
 use std::io::Write;
+use logging::Logger;
 
 fn main() {
+    let mut logger = logging::log_to(std::io::stdout(), logging::LogLevel::Info);
+    info!(logger, "a");
+    return;
+
     //let mut white = play::evaldriven::classic_eval_player();
     //let mut white = play::montecarlo::basic_monte_carlo1();
     //let mut white = play::evaldriven::classic_eval_player();

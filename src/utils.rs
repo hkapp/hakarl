@@ -55,3 +55,10 @@ pub enum Either<L, R> {
     Left(L),
     Right(R)
 }
+
+/* Option utils */
+
+pub fn some_if<T>(cond: bool, value: T) -> Option<T> {
+    if cond { Some(value) }
+    else { None }
+}

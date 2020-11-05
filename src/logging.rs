@@ -1,4 +1,5 @@
 use std::io;
+use crate::utils;
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum LogLevel {
@@ -35,40 +36,73 @@ impl Ord for LogLevel {
     }
 }
 
-pub struct Logger<W> {
+pub trait Logger {
+
+    fn allows(&self, log_level: LogLevel) -> bool;
+
+    fn writer(&mut self, log_level: LogLevel) -> Option<&mut dyn io::Write>;
+}
+
+//fn level_allows_tracing(allowed_level: LogLevel, log_level: LogLevel) -> bool {
+    //assert!(log_level != LogLevel::All && log_level != LogLevel::None);
+
+    //allowed_level <= log_level && allowed_level != LogLevel::None
+//}
+
+
+/* AnyLogger */
+
+pub struct AnyLogger<W> {
     level:  LogLevel,
     writer: W
 }
 
-impl<W: io::Write> Logger<W> {
+impl<W: io::Write> Logger for AnyLogger<W> {
 
-    pub fn allows(&self, log_level: LogLevel) -> bool {
+    fn allows(&self, log_level: LogLevel) -> bool {
         assert!(log_level != LogLevel::All && log_level != LogLevel::None);
 
         self.level <= log_level && self.level != LogLevel::None
     }
 
-    pub fn writer(&mut self, log_level: LogLevel) -> Option<&mut W> {
-        if self.allows(log_level) {
-            Some(&mut self.writer)
-        }
-        else {
-            None
-        }
+    fn writer(&mut self, log_level: LogLevel) -> Option<&mut dyn io::Write> {
+        utils::some_if(self.allows(log_level), &mut self.writer)
+        //if self.allows(log_level) {
+            //Some(&mut self.writer)
+        //}
+        //else {
+            //None
+        //}
     }
+}
 
-    pub fn new(log_level: LogLevel, writer: W) -> Logger<W> {
-        Logger {
-            level: log_level,
-            writer
-        }
+pub fn log_to<W: io::Write>(writer: W, log_level: LogLevel) -> AnyLogger<W> {
+    AnyLogger::<W> {
+        level: log_level,
+        writer
     }
 }
 
 #[allow(dead_code)]
-pub fn log_nothing() -> Logger<io::Sink> {
-    Logger::new(LogLevel::None, io::sink())
+pub fn log_nothing() -> AnyLogger<io::Sink> {
+    log_to(io::sink(), LogLevel::None)
 }
+
+//pub struct ErasedLogger {
+    //erased_writer: Box<dyn io::Write>
+//}
+
+//pub fn erase<W>(writer: W) -> ErasedLogger
+    //where W: Into<Box<dyn io::Write>>
+//{
+    //ErasedLogger {
+        //erased_writer: writer.into()
+    //}
+//}
+
+//trait Logger {
+
+//}
 
 #[macro_export]
 macro_rules! log {
