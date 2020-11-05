@@ -6,6 +6,7 @@ use crate::utils;
 use crate::eval;
 use crate::eval::EvalFun;
 use super::{MoveCount, ChessPlayer};
+use crate::logging::LogLevel;
 
 pub struct ExhaustiveSearch {
     depth: MoveCount,
@@ -16,25 +17,30 @@ pub struct ExhaustiveSearch {
 #[allow(unused_must_use)]
 impl ChessPlayer for ExhaustiveSearch {
     fn pick_move(&mut self, board: &Board, logger: &mut super::Logger) -> ChessMove {
-        write!(logger, "\n{{start:{}, ", (self.eval)(board, board.side_to_move()));
+        let init_log_level = LogLevel::Info;
+        log_nol!(logger, init_log_level,
+                 "\n{{start:{}, ", (self.eval)(board, board.side_to_move()));
+
         let (best_move, _best_board) = exhaustive_search(board,
                                                          self.eval,
                                                          self.depth,
                                                          &mut self.rng,
-                                                         logger);
-        writeln!(logger, "}}");
-        writeln!(logger, "Best move: {}", best_move);
+                                                         logger,
+                                                         init_log_level);
+        log!(logger, init_log_level, "}}");
+        info!(logger, "Best move: {}", best_move);
         return best_move;
     }
 }
 
 #[allow(unused_must_use)]
 fn exhaustive_search<R: Rng>(
-    board:    &Board,
-    eval_fun: EvalFun,
-    depth:    MoveCount,
-    rng:      &mut R,
-    logger:   &mut super::Logger)
+    board:     &Board,
+    eval_fun:  EvalFun,
+    depth:     MoveCount,
+    rng:       &mut R,
+    logger:    &mut super::Logger,
+    log_level: LogLevel)
     -> (ChessMove, Board)
 {
     let base_case = |mv| board.make_move_new(mv);
@@ -44,9 +50,9 @@ fn exhaustive_search<R: Rng>(
 
         match next_board.status() {
             BoardStatus::Ongoing => {
-                write!(logger, "{}:{{", mv);
-                let r = exhaustive_search(&next_board, eval_fun, depth-1, rng, logger).1;
-                write!(logger, "}}, ");
+                log_nol!(logger, log_level, "{}:{{", mv);
+                let r = exhaustive_search(&next_board, eval_fun, depth-1, rng, logger, log_level.lower()).1;
+                log_nol!(logger, log_level, "}}, ");
                 r
             }
             _                    => next_board  // stop recursion if game is over
@@ -63,7 +69,7 @@ fn exhaustive_search<R: Rng>(
     let board_and_moves: Vec<_> = MoveGen::new_legal(board).map(|mv| (mv, board_for(mv))).collect();
 
     let best_moves = utils::iter::all_maxs_by_key(board_and_moves.into_iter(),
-                                                  |(mv, new_board)| { let v = eval_fun(new_board, player); write!(logger, "{}:{}, ", mv, v); v });
+                                                  |(mv, new_board)| { let v = eval_fun(new_board, player); log_nol!(logger, log_level, "{}:{}, ", mv, v); v });
     best_moves.into_iter()
               .choose(rng)
               .unwrap()

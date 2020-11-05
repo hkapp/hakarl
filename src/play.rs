@@ -1,5 +1,6 @@
 use chess::{Board, BoardStatus, ChessMove, Color};
 use crate::utils;
+use crate::logging;
 
 pub mod random;
 pub mod evaldriven;
@@ -8,7 +9,7 @@ pub mod exhaustive;
 pub mod astar;
 mod searchtree;
 
-pub type Logger = dyn std::io::Write;
+pub type Logger = dyn logging::Logger;
 
 pub trait ChessPlayer {
     fn pick_move(&mut self, board: &Board, logger: &mut Logger) -> ChessMove;

@@ -9,6 +9,7 @@ use crate::play;
 use play::MoveCount;
 use std::time::{Duration, Instant};
 use std::fmt::Display;
+use crate::logging;
 
 mod stats;
 use stats::MoveEval;
@@ -62,7 +63,7 @@ fn pick_node_move<M: MoveEval, R: Rng>(
     node:       &Node<M::Stats>,
     move_eval:  &M,
     rng:        &mut R,
-    log_distr:  Option<&mut super::Logger>)
+    logger:     &mut super::Logger)
     -> usize
 {
     let weights: Vec<_> = (&node.moves).into_iter()
@@ -70,8 +71,7 @@ fn pick_node_move<M: MoveEval, R: Rng>(
                                          .collect();
     let weighted_dist = WeightedIndex::new(&weights).unwrap();
 
-    log_distr.map(|logger|
-        writeln!(logger, "Distribution: {:?}", weighted_dist));
+    trace!(logger, "Distribution: {:?}", weighted_dist);
 
     weighted_dist.sample(rng)
 }
@@ -83,10 +83,10 @@ fn run_once<P: ChessPlayer, M: MoveEval, R: Rng>(
     white_rollout: &mut P,
     rollout_depth: MoveCount,
     rng:           &mut R,
-    log_distr:     Option<&mut super::Logger>)
+    logger:        &mut super::Logger)
 {
     let root_node = &mut root.root_node;
-    let move_idx = pick_node_move(&root_node, move_eval, rng, log_distr);
+    let move_idx = pick_node_move(&root_node, move_eval, rng, logger);
     let first_move = root_node.moves[move_idx].0;
     let stats_to_update = &mut root_node.moves[move_idx].1;
 
@@ -98,7 +98,7 @@ fn run_once<P: ChessPlayer, M: MoveEval, R: Rng>(
         moves:       vec![first_move],
     };
 
-    let mut rollout_logger = std::io::sink();  // ignore any output
+    let mut rollout_logger = logging::ignore_all();  // ignore any output
     game.continue_playing(white_rollout, black_rollout, rollout_depth, &mut rollout_logger);
 
     let player = init_board.side_to_move();
@@ -116,9 +116,9 @@ fn print_run_info<M, S>(root:      &Root<S>,
         S: Display
 {
     let ms_elapsed = run_dur.as_millis();
-    writeln!(logger, "Executed {} runs in {}ms", n_runs, ms_elapsed);
-    writeln!(logger, "  Average: {:.1} ms per run", (ms_elapsed as f32 / n_runs as f32));
-    writeln!(logger, "           {:.1} runs per second", (n_runs as f32 / ms_elapsed as f32) * 1000.);
+    info!(logger, "Executed {} runs in {}ms", n_runs, ms_elapsed);
+    info!(logger, "  Average: {:.1} ms per run", (ms_elapsed as f32 / n_runs as f32));
+    info!(logger, "           {:.1} runs per second", (n_runs as f32 / ms_elapsed as f32) * 1000.);
 
     //let mut fmt_stats = String::new();
     //let moves = root.root_node.moves.clone();
@@ -132,18 +132,18 @@ fn print_run_info<M, S>(root:      &Root<S>,
     //let mut left_padding = String::from("  ");
     let print_count = 3;
 
-    writeln!(logger, "  Best moves:");
+    debug!(logger, "  Best moves:");
     for (mv, stats, mv_value) in sorted_moves.iter().take(print_count) {
-        writeln!(logger, "    [{}] {} ~> {}", mv, stats, mv_value);
+        debug!(logger, "    [{}] {} ~> {}", mv, stats, mv_value);
     }
 
-    writeln!(logger, "  Worst moves:");
+    debug!(logger, "  Worst moves:");
     for (mv, stats, mv_value) in sorted_moves.iter()
                                              .rev()
                                              .take(print_count)
                                              .rev()
     {
-        writeln!(logger, "    [{}] {} ~> {}", mv, stats, mv_value);
+        debug!(logger, "    [{}] {} ~> {}", mv, stats, mv_value);
     }
 }
 
@@ -168,15 +168,13 @@ fn run_monte_carlo_search<P, M, S, R>(
 
     let mut root = new_root(board, move_eval);
     while start_time.elapsed() < time_budget {
-        let show_distr = None;/*rng.gen_range(0, 20) == 0;*/
-
         run_once(&mut root,
                  move_eval,
                  white_rollout,
                  black_rollout,
                  rollout_depth,
                  rng,
-                 show_distr);
+                 logger);
 
         n_runs += 1;
     }
