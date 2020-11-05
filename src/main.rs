@@ -2,6 +2,7 @@ mod pgn;
 mod eval;
 mod play;
 mod utils;
+mod logging;
 
 use chess::BoardStatus;
 use play::Game;
