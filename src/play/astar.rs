@@ -4,7 +4,6 @@ use crate::eval;
 use crate::eval::EvalFun;
 use super::searchtree;
 use super::ChessPlayer;
-use std::collections::BinaryHeap;
 use std::time::{Duration, Instant};
 use crate::utils::OrdByKey;
 use crate::utils::display;
@@ -12,6 +11,7 @@ use crate::utils::display::JsonBuilder;
 use std::mem;
 use std::mem::MaybeUninit;
 use crate::logging;
+use crate::utils::fairheap::FairHeap;
 
 pub struct AStar {
     time_budget: Duration,
@@ -163,7 +163,8 @@ type SearchTree = SearchNode;
 type SearchNode = searchtree::Node<NodeData, MoveData>;
 type SearchMove = searchtree::Branch<NodeData, MoveData>;
 
-type NodeData    = BinaryHeap<OrdContent>;
+type MaxHeap<T>  = FairHeap<T>;
+type NodeData    = MaxHeap<OrdContent>;
 type OrdContent  = OrdByKey<eval::Score, MoveAgg>;
 
 #[derive(Clone)]
@@ -241,7 +242,7 @@ fn expand(board: Board, eval_fun: EvalFun) -> SearchNode {
 }
 
 fn base_search(board: &Board, moves: &[SearchMove], eval_fun: EvalFun) -> NodeData {
-    let mut ord_moves = BinaryHeap::new();
+    let mut ord_moves = MaxHeap::new();
     let eval_player = board.side_to_move();
     for mv_idx in 0..moves.len() {
         let mv = moves[mv_idx].mv;
@@ -288,11 +289,10 @@ fn best_move_info(node: &SearchTree) -> Option<&MoveAgg> {
     best_kv.map(|kv| &kv.0.value)
 }
 
-const DEFAULT_TIME_BUDGET: Duration = Duration::from_millis(5);
 #[allow(dead_code)]
-pub fn astar_player() -> impl ChessPlayer {
+pub fn astar_player(time_budget: Duration) -> impl ChessPlayer {
     AStar {
-        time_budget: DEFAULT_TIME_BUDGET,
-        eval:        eval::classic_eval,
+        time_budget,
+        eval: eval::classic_eval,
     }
 }

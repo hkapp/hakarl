@@ -17,7 +17,7 @@ pub struct ExhaustiveSearch {
 #[allow(unused_must_use)]
 impl ChessPlayer for ExhaustiveSearch {
     fn pick_move(&mut self, board: &Board, logger: &mut super::Logger) -> ChessMove {
-        let init_log_level = LogLevel::Info;
+        let init_log_level = LogLevel::Debug;
         log_nol!(logger, init_log_level,
                  "\n{{start:{}, ", (self.eval)(board, board.side_to_move()));
 

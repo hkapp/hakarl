@@ -14,14 +14,15 @@ use play::Game;
 use std::fs::File;
 use std::path::Path;
 use std::io::Write;
+use std::time::Duration;
 
 fn main() {
     //let mut white = play::evaldriven::classic_eval_player();
     //let mut white = play::montecarlo::basic_monte_carlo1();
     //let mut white = play::evaldriven::classic_eval_player();
     //let mut white = play::exhaustive::exhaustive_search_player(2);
-    let mut white = play::evaldriven::classic_eval_player();
-    let mut black = play::astar::astar_player();
+    let mut white = play::montecarlo::basic_monte_carlo1();
+    let mut black = play::astar::astar_player(Duration::from_millis(500));
 
     let log_level = logging::LogLevel::Debug;
     let mut game_logger = logging::log_to_file(&Path::new(LOG_FILE_PATH), log_level)
