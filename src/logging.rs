@@ -167,12 +167,14 @@ pub fn ignore_all() -> AnyLogger<io::Sink> {
 macro_rules! log {
     ($logger:expr, $log_level:expr, $fmt:literal $(, $arg:expr)*) => {
         crate::logging::Logger::writer($logger, $log_level)
-            .ok_or(std::io::Error::new(std::io::ErrorKind::WriteZero, "Insufficient logging level"))
-            .and_then(|w| writeln!(w, $fmt $(, $arg)*))
+            .map(|w| writeln!(w, $fmt $(, $arg)*))
+            //.ok_or(std::io::Error::new(std::io::ErrorKind::WriteZero, "Insufficient logging level"))
+            //.and_then(|w| writeln!(w, $fmt $(, $arg)*))
     }
 }
 
 //#[macro_export]
+#[allow(unused_macros)]
 macro_rules! warn {
     ($logger:expr, $fmt:literal $(, $arg:expr)*) => {
         log!($logger, crate::logging::LogLevel::Warn, $fmt $(, $arg)*)

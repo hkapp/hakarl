@@ -2,7 +2,8 @@ use crate::utils::{Stack, KeyValue};
 
 /* Vec::join for Iter */
 
-pub fn join<I>(mut iter: I, sep: &str) -> String
+#[allow(dead_code)]
+pub fn join<I>(iter: I, sep: &str) -> String
     where
         I: Iterator<Item = String>
 {

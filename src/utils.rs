@@ -3,42 +3,53 @@ use core::cmp::Ordering;
 pub mod iter;
 pub mod display;
 
-/* Simple key-value type, ordered by key */
+/* A wrapper around KeyValue, ordered by key */
 
-pub struct OrdBy<K, V> {
-    pub ord_key: K,
-    pub data:    V
-}
+#[derive(Clone)]
+pub struct OrdByKey<K, V>(pub KeyValue<K, V>);
 
-impl<K, V> PartialEq for OrdBy<K, V>
+impl<K, V> PartialEq for OrdByKey<K, V>
     where K: PartialEq
 {
     fn eq(&self, other: &Self) -> bool {
-        self.ord_key.eq(&other.ord_key)
+        self.0.key.eq(&other.0.key)
     }
 }
 
-impl<K, V> Eq for OrdBy<K, V>
-    where K: PartialEq { }
+impl<K, V> Eq for OrdByKey<K, V>
+    where K: Eq
+    { }
 
-impl<K, V> PartialOrd for OrdBy<K, V>
+impl<K, V> PartialOrd for OrdByKey<K, V>
     where K: PartialOrd
 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.ord_key.partial_cmp(&other.ord_key)
+        self.0.key.partial_cmp(&other.0.key)
     }
 }
 
-impl<K, V> Ord for OrdBy<K, V>
+impl<K, V> Ord for OrdByKey<K, V>
     where K: Ord
 {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.ord_key.cmp(&other.ord_key)
+        self.0.key.cmp(&other.0.key)
+    }
+}
+
+impl<K, V> OrdByKey<K, V> {
+    pub fn from(key: K, value: V) -> Self {
+        OrdByKey (
+            KeyValue {
+                key,
+                value
+            }
+        )
     }
 }
 
 /* A simple key-value, that isn't ordered */
 
+#[derive(Clone)]
 pub struct KeyValue<K, V> {
     pub key:   K,
     pub value: V

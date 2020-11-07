@@ -75,6 +75,7 @@ fn exhaustive_search<R: Rng>(
               .unwrap()
 }
 
+#[allow(dead_code)]
 pub fn exhaustive_search_player(depth: MoveCount) -> impl ChessPlayer {
     ExhaustiveSearch {
         depth,

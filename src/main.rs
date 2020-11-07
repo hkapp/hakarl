@@ -19,9 +19,9 @@ fn main() {
     //let mut white = play::evaldriven::classic_eval_player();
     //let mut white = play::montecarlo::basic_monte_carlo1();
     //let mut white = play::evaldriven::classic_eval_player();
-    let mut white = play::exhaustive::exhaustive_search_player(1);
-    //let mut black = play::astar::astar_player();
-    let mut black = play::exhaustive::exhaustive_search_player(2);
+    //let mut white = play::exhaustive::exhaustive_search_player(2);
+    let mut white = play::evaldriven::classic_eval_player();
+    let mut black = play::astar::astar_player();
 
     let log_level = logging::LogLevel::Debug;
     let mut game_logger = logging::log_to_file(&Path::new(LOG_FILE_PATH), log_level)
