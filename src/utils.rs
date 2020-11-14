@@ -38,7 +38,7 @@ impl<K, V> Ord for OrdByKey<K, V>
 }
 
 impl<K, V> OrdByKey<K, V> {
-    pub fn from(key: K, value: V) -> Self {
+    pub fn new(key: K, value: V) -> Self {
         OrdByKey (
             KeyValue {
                 key,

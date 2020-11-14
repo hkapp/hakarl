@@ -1,20 +1,21 @@
 use core::cmp::Ordering;
 use std::collections::BinaryHeap;
 use rand;
-use rand::Rng;
-use rand::rngs::ThreadRng;
+use rand::{Rng, SeedableRng};
 use std::cell::RefCell;
+
+type SomeRng = rand::rngs::StdRng;
 
 #[derive(Clone)]
 pub struct FairHeap<T> {
     eq_best:    Vec<T>,
     all_others: BinaryHeap<T>,
-    rng:        RefCell<ThreadRng>  /* interior mutable */
+    rng:        RefCell<SomeRng>  /* interior mutable */
 }
 
 impl<T: Ord> FairHeap<T> {
     pub fn new() -> FairHeap<T> {
-        let rng = rand::thread_rng();
+        let rng = SomeRng::from_entropy();
 
         FairHeap {
             eq_best:    Vec::new(),

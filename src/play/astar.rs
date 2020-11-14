@@ -285,46 +285,60 @@ fn init_root(init_board: Board, eval_fun: EvalFun) -> SearchTree {
     new_node(init_board, eval_fun)
 }
 
-fn descent(search_node: &mut SearchNode, eval_fun: EvalFun) -> BothScores {
+fn descent(node: &mut SearchNode, eval_fun: EvalFun) -> BothScores {
     // FIXME shortcut this code if the game is over
-    let curr_board = &search_node.board;
+    let curr_board = &node.board;
     if curr_board.status() != BoardStatus::Ongoing {
         /* Game is over, return win / loss values */
         // Do we need to make sure that we don't hit this node again?
         return BothScores::build_from(curr_board, eval_fun);
     }
 
-    let heap           = &mut search_node.node_data;
-    let best_entry     = heap.pop().unwrap();
-    let best_move_idx  = best_entry.mv_idx;
-    let best_branch    = &mut search_node.moves[best_move_idx];
+    let heap       = &mut node.node_data;
+    let best_entry = heap.pop().unwrap();
+    let mv_idx     = best_entry.mv_idx;
+    let branch     = &mut node.moves[mv_idx];
 
-    let new_scores = match best_branch.child_node.as_mut() {
-        Some(mut child) => descent(&mut child, eval_fun),
-        None        => {
-            /* new_node this child */
-            /* TODO extract this into a function */
-            let mv = best_branch.mv;
-            let new_board = curr_board.make_move_new(mv);
-            let mv_data  = new_node(new_board, eval_fun);
-            let scores    = best_scores(&mv_data, eval_fun);
-            best_branch.child_node = Some(mv_data);
-            scores
-        }
-    };
+    let new_scores = continue_descent(branch, curr_board, eval_fun);
 
     /* Update the heap */
     let eval_player = curr_board.side_to_move();
     let new_heap_entry = HeapEntry {
         score:  new_scores.get(eval_player),
-        mv_idx: best_move_idx
+        mv_idx
     };
     heap.push(new_heap_entry);
-    /* Update the branch data */
-    best_branch.mv_data = new_scores;
 
     // FIXME handle finished games
     return new_scores;
+}
+
+fn continue_descent(branch: &mut SearchMove, prev_board: &Board, eval_fun: EvalFun) -> BothScores {
+    let new_scores = match branch.child_node.as_mut() {
+        Some(mut child) => {
+            /* child node already expanded: recursively descent */
+            descent(&mut child, eval_fun)
+        },
+        None => {
+            /* child not exanded yet: do it now and stop the recursion */
+            expand(branch, prev_board, eval_fun);
+            best_scores(branch.child_node.as_ref().unwrap(), eval_fun)
+        }
+    };
+
+    /* Update the branch data */
+    branch.mv_data = new_scores;
+
+    return new_scores;
+}
+
+fn expand(branch: &mut SearchMove, prev_board: &Board, eval_fun: EvalFun) {
+    let mv        = branch.mv;
+    let new_board = prev_board.make_move_new(mv);
+    let new_child = new_node(new_board, eval_fun);
+
+    /* Mark this branch as expanded by storing the child node */
+    branch.child_node = Some(new_child);
 }
 
 fn new_node(board: Board, eval_fun: EvalFun) -> SearchNode {
