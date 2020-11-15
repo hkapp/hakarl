@@ -1,4 +1,4 @@
-mod asprl;
+pub mod asprl;
 
 use chess;
 use chess::{Board, BoardStatus, ChessMove, Color, MoveGen};
@@ -15,6 +15,7 @@ use std::mem::MaybeUninit;
 use crate::logging;
 use crate::utils::fairheap::FairHeap;
 use std::cmp;
+use crate::utils::{Either, Either::Left, Either::Right};
 
 pub struct AStar {
     time_budget: Duration,
@@ -66,27 +67,34 @@ fn print_tree_statistics(
                   level1_depths.iter().max().unwrap(),
                   level1_depths.iter().min().unwrap());
 
-    print_best_lines(tree, logger);
+    print_best_lines(tree, eval_fun, logger);
 
     if logger.allows(logging::LogLevel::Trace) {
         print_json_tree(tree, eval_fun, logger);
     }
 }
 
-fn ordered_move_data(node: &SearchNode) -> Vec<HeapEntry> {
-    node.node_data.clone().into_sorted_vec()
+fn sorted_heap_entries(node: &SearchNode) -> Vec<HeapEntry> {
+    node.node_data
+        .clone()
+        .into_sorted_vec()
 }
 
-fn ordered_branches(node: &SearchNode) -> Vec<&SearchMove> {
-    ordered_move_data(node)
+fn sorted_mv_idx(node: &SearchNode) -> impl Iterator<Item = usize> {
+    sorted_heap_entries(node)
         .into_iter()
-        .map(|entry| &node.moves[entry.mv_idx])
+        .map(|entry| entry.mv_idx)
+}
+
+fn sorted_branches(node: &SearchNode) -> Vec<&SearchMove> {
+    sorted_mv_idx(node)
+        .map(|mv_idx| &node.moves[mv_idx])
         .collect()
 }
 
 fn print_json_tree(tree: &SearchTree, eval_fun: EvalFun, logger: &mut super::Logger) {
     fn rec_build_json(node: &SearchNode, json: &mut JsonBuilder) {
-        let sorted_moves = ordered_move_data(node);
+        let sorted_moves = sorted_heap_entries(node);
         for mvdat in sorted_moves {
             let move_idx = mvdat.mv_idx;
             let move_branch = &node.moves[move_idx];
@@ -128,34 +136,99 @@ fn print_json_tree(tree: &SearchTree, eval_fun: EvalFun, logger: &mut super::Log
     };
 }
 
-fn print_best_lines(tree: &SearchTree, logger: &mut super::Logger) {
-    fn format_line(line: &[ChessMove]) -> String {
-        let formatted_moves = line.iter().map(|mv| format!("{}", mv));
-        display::join(formatted_moves, " -> ")
+fn print_best_lines(tree: &SearchTree, eval_fun: EvalFun, logger: &mut super::Logger) {
+    fn format_line(line: &[Either<&SearchNode, &SearchMove>], eval_fun: EvalFun) -> String {
+        //let formatted_moves = line.iter().map(|mv| format!("{}", mv));
+        //display::join(formatted_moves, " -> ")
+        /* The first element should always be the initial board */
+        let init_board = &line[0].unwrap_left().board;
+        let eval_player = init_board.side_to_move();
+
+        let mut scored_line = line.iter().map(
+            |elem| match elem {
+                Left(node)    => Left(eval_fun(&node.board, eval_player)),
+                Right(branch) => Right(branch.mv),
+            }
+        );
+
+        let mut piecewise_format = Vec::new();
+        /* the first element in the line is a board, so get its value */
+        let init_value = scored_line.next().unwrap().unwrap_left();
+        while let Some(mv_elem) = scored_line.next() {
+            /* this has to be a move */
+            let mv = mv_elem.unwrap_right();
+
+            /* the next elem must be a board value */
+            /* There may be no board if this is the end of the line
+             * (the node hasn't been expanded)
+             */
+            let board_value = match scored_line.next() {
+                Some(value_elem) => value_elem.unwrap_left(),
+                None => {
+                    /* This is the end of the line, so the node hasn't been expanded.
+                     * Fetch the last board and evaluate it.
+                     */
+                    let all_boards = line.iter().filter_map(
+                        |elem| match elem {
+                            Left(node) => Some(&node.board),
+                            Right(_)   => None
+                        }
+                    );
+                    let last_board = all_boards.last().unwrap();
+                    let final_value = eval_fun(last_board, eval_player);
+
+                    final_value
+                }
+            };
+            /* Print only the relative value of the move wrt. the initial state */
+            let relative_value = board_value - init_value;
+
+            piecewise_format.push(format!("{}({:+})", mv, relative_value));
+        }
+
+        return display::join(piecewise_format.into_iter(), " -> ");
     }
 
     #[allow(unused_must_use)]
-    fn print_line_starting(branch: &SearchMove, line_prefix: &str, writer: &mut dyn std::io::Write) {
+    fn print_line_starting(
+        tree:        &SearchTree,
+        mv_idx:      usize,
+        line_prefix: &str,
+        eval_fun:    EvalFun,
+        writer:      &mut dyn std::io::Write)
+    {
+        let branch = &tree.moves[mv_idx];
+        /* Make the line start at the node pointed to by mv_idx */
         let mut line = match &branch.child_node {
-            Some(node) => best_line(&node),
+            Some(node) => best_line_full(&node),
             None       => Vec::new()
         };
-        line.insert(0, branch.mv);
-        writeln!(writer, "{}{}", line_prefix, format_line(&line));
+        /* Add the move and board state that were skipped */
+        line.insert(0, Left(tree));
+        line.insert(1, Right(branch));
+
+        /* Format and print the line */
+        let formatted_line = format_line(&line, eval_fun);
+        writeln!(writer, "{}{}", line_prefix, formatted_line);
     }
 
-    let ordered_branches = ordered_branches(tree);
-    assert!(ordered_branches.len() >= 1);
+    let mv_indexes: Vec<_> = sorted_mv_idx(tree).collect();
+    assert!(mv_indexes.len() >= 1);
 
+
+    let init_board = &tree.board;
+    let eval_player = init_board.side_to_move();
+    let init_value = eval_fun(init_board, eval_player);
+    let best_line_prefix = format!("  Best line: [{}] ", init_value);
     use logging::LogLevel;
     logger.writer(LogLevel::Info)
-        .map(|writer| print_line_starting(&ordered_branches[0], "  Best line: ", writer));
+        .map(|writer| print_line_starting(tree, mv_indexes[0], &best_line_prefix, eval_fun, writer));
 
     debug!(logger, "  Other lines (ordered):");
     logger.writer(LogLevel::Debug)
         .map(|writer|
-            for i in 1..ordered_branches.len() {
-                print_line_starting(&ordered_branches[i], "    ", writer)
+            for i in 1..mv_indexes.len() {
+                print_line_starting(tree, mv_indexes[i], "    ", eval_fun, writer)
             });
 }
 
@@ -168,6 +241,26 @@ fn best_line(tree: &SearchTree) -> Vec<ChessMove> {
         //let branch = &curr_node.unwrap().moves[move_idx];
         line.push(branch.mv);
         curr_node = branch.child_node.as_ref();
+    }
+    return line;
+}
+
+fn best_line_full(tree: &SearchTree) -> Vec<Either<&SearchNode, &SearchMove>> {
+    let mut curr_node = tree /*Some(tree)*/;
+    let mut line = Vec::new();
+    line.push(Left(tree));
+    while let Some(branch) = best_branch(curr_node) /*curr_node.and_then(best_branch)*/ {
+        //let move_data = best_move_info(curr_node);
+        //let move_idx = move_data.mv_idx;
+        //let branch = &curr_node.unwrap().moves[move_idx];
+        line.push(Right(branch));
+        match &branch.child_node {
+            Some(child) => {
+                line.push(Left(&child));
+                curr_node = &child /*branch.child_node.as_ref()*/;
+            }
+            None => break,
+        }
     }
     return line;
 }

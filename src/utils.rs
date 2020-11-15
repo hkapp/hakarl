@@ -60,17 +60,36 @@ pub struct KeyValue<K, V> {
 
 pub type Stack<T> = Vec<T>;
 
-/* Either */
-
-#[allow(dead_code)]
-pub enum Either<L, R> {
-    Left(L),
-    Right(R)
-}
-
 /* Option utils */
 
 pub fn some_if<T>(cond: bool, value: T) -> Option<T> {
     if cond { Some(value) }
     else { None }
+}
+
+/* Either */
+
+#[derive(Clone, Copy)]
+pub enum Either<L, R> {
+    Left(L),
+    Right(R)
+}
+use Either::*;
+
+impl<L, R> Either<L, R> {
+
+    pub fn unwrap_left(self) -> L {
+        match self {
+            Left(elem) => elem,
+            _          => panic!("Expected Left, found Right"),
+        }
+    }
+
+    pub fn unwrap_right(self) -> R {
+        match self {
+            Right(elem) => elem,
+            _           => panic!("Expected Right, found Left"),
+        }
+    }
+
 }

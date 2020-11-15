@@ -30,6 +30,7 @@ pub struct AStarPrl {
     n_threads:   ThreadCount
 }
 
+const SAFETY_WAIT_MS: u64 = 5;
 impl ChessPlayer for AStarPrl {
     fn pick_move(&mut self, board: &Board, logger: &mut play::Logger) -> ChessMove {
         let init_tree = init_root(board.clone(), self.eval);
@@ -37,7 +38,8 @@ impl ChessPlayer for AStarPrl {
         let eval_fun = self.eval;
         /*let shared_logger = Arc::new(Mutex::new(logger))*/
 
-        let stop_time = Instant::now() + self.time_budget;
+        let start_time = Instant::now();
+        let stop_time = start_time + self.time_budget;
         let mut threads = Vec::new();
         for _ in 0..self.n_threads {
             let tree_ref = Arc::clone(&shared_tree);
@@ -49,12 +51,19 @@ impl ChessPlayer for AStarPrl {
         for t in threads {
             t.join().unwrap()
         }
+        let total_work_duration = Instant::now() - start_time;
+        /*
+        // We don't wait on the threads to finish, as they might still be working for a couple
+        // For now, sleep and check the Arc count instead
+        // Arc count should be zero if all the threads finished
+        let wait_time = self.time_budget + Duration::from_millis(SAFETY_WAIT_MS);
+        thread::sleep(wait_time);*/
 
         let final_shared_tree = Arc::try_unwrap(shared_tree)
                             .unwrap_or_else(|arc| panic!("More than one ref remains: {} left",
                                                          Arc::strong_count(&arc)));
         let final_tree = final_shared_tree.into_inner().expect("Lock was poisoned");
-        super::finalize(&final_tree, self.eval, self.time_budget, logger)
+        super::finalize(&final_tree, self.eval, total_work_duration, logger)
     }
 }
 
@@ -161,6 +170,7 @@ fn parallel_search(
         /* From this point on there should be automatic unlocking, as we're
          * not using anything from 'root'
          */
+        drop(root);  /* this should unlock */
         /* LOCK: END */
 
         /* Access the branch in unsafe mode.
@@ -181,6 +191,7 @@ fn parallel_search(
             mv_idx
         };
         heap.push(new_entry);
+        drop(root);  /* this should unlock */
         /* LOCK: END */
     }
 }

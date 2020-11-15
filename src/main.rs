@@ -21,8 +21,8 @@ fn main() {
     //let mut white = play::montecarlo::basic_monte_carlo1();
     //let mut white = play::evaldriven::classic_eval_player();
     //let mut white = play::exhaustive::exhaustive_search_player(2);
-    let mut white = play::astar::astar_player(Duration::from_millis(100));
-    let mut black = play::astar::astar_player(Duration::from_millis(200));
+    let mut white = play::astar::astar_player(Duration::from_millis(30));
+    let mut black = play::astar::asprl::parallel_player(Duration::from_millis(30), 4);
 
     let log_level = logging::LogLevel::Debug;
     let mut game_logger = logging::log_to_file(&Path::new(LOG_FILE_PATH), log_level)
