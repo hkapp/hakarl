@@ -3,6 +3,7 @@ use core::cmp::Ordering;
 pub mod iter;
 pub mod display;
 pub mod fairheap;
+pub mod dot;
 
 /* A wrapper around KeyValue, ordered by key */
 

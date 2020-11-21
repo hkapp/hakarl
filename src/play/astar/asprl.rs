@@ -1,19 +1,10 @@
 use chess;
-use chess::{Board, BoardStatus, ChessMove};
+use chess::{Board, ChessMove};
 use crate::eval;
 use crate::eval::EvalFun;
-use super::searchtree;
 use super::ChessPlayer;
 use std::time::{Duration, Instant};
-use crate::utils::OrdByKey;
-use crate::utils::display;
-use crate::utils::display::JsonBuilder;
-use std::mem;
-use std::mem::MaybeUninit;
-use crate::logging;
-use crate::utils::fairheap::FairHeap;
 use std::thread;
-use std::sync;
 use std::sync::{Arc, Mutex};
 use crate::play;
 
@@ -30,7 +21,6 @@ pub struct AStarPrl {
     n_threads:   ThreadCount
 }
 
-const SAFETY_WAIT_MS: u64 = 5;
 impl ChessPlayer for AStarPrl {
     fn pick_move(&mut self, board: &Board, logger: &mut play::Logger) -> ChessMove {
         let init_tree = init_root(board.clone(), self.eval);
@@ -101,7 +91,7 @@ fn init_root(init_board: Board, eval_fun: EvalFun) -> PrlRoot {
         //.map(f)
         //.map_err(|_| Poisoned)
 //}
-
+/*
 struct Poisoned;
 type LockResult<T> = Result<T, Poisoned>;
 
@@ -138,7 +128,7 @@ fn safe_set(shared_tree: &Mutex<SeqTree>, elem: super::HeapEntry) -> LockResult<
         Err(_)   => Err(Poisoned)
     }
 }
-
+*/
 fn parallel_search(
     shared_tree:   Arc<SharedTree>,
     stop_time:     Instant,
@@ -150,7 +140,7 @@ fn parallel_search(
     while Instant::now() < stop_time {
         /* LOCK: BEGIN */
         let mut root = shared_tree.lock().unwrap();
-        let mut heap = &mut root.node_data;
+        let heap = &mut root.node_data;
         let mv_idx = match heap.pop() {
             Some(entry) => entry.mv_idx,
             None => {
@@ -185,7 +175,7 @@ fn parallel_search(
         /* Need to lock again here */
         /* LOCK: BEGIN */
         let mut root = shared_tree.lock().unwrap();
-        let mut heap = &mut root.node_data;
+        let heap = &mut root.node_data;
         let new_entry = super::HeapEntry {
             score: new_scores.get(root_player),
             mv_idx

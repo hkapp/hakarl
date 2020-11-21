@@ -7,11 +7,8 @@ use crate::eval::EvalFun;
 use super::searchtree;
 use super::ChessPlayer;
 use std::time::{Duration, Instant};
-use crate::utils::OrdByKey;
 use crate::utils::display;
 use crate::utils::display::JsonBuilder;
-use std::mem;
-use std::mem::MaybeUninit;
 use crate::logging;
 use crate::utils::fairheap::FairHeap;
 use std::cmp;
@@ -86,6 +83,7 @@ fn sorted_mv_idx(node: &SearchNode) -> impl Iterator<Item = usize> {
         .map(|entry| entry.mv_idx)
 }
 
+#[allow(dead_code)]
 fn sorted_branches(node: &SearchNode) -> Vec<&SearchMove> {
     sorted_mv_idx(node)
         .map(|mv_idx| &node.moves[mv_idx])
@@ -232,6 +230,7 @@ fn print_best_lines(tree: &SearchTree, eval_fun: EvalFun, logger: &mut super::Lo
             });
 }
 
+#[allow(dead_code)]
 fn best_line(tree: &SearchTree) -> Vec<ChessMove> {
     let mut curr_node = Some(tree);
     let mut line = Vec::new();

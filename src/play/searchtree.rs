@@ -1,4 +1,4 @@
-use chess::{Board, ChessMove, MoveGen};
+use chess::{Board, ChessMove};
 
 /*********** Structs definition *************/
 
@@ -17,7 +17,7 @@ pub struct Branch<N, M> {
 /*********** API *************/
 
 impl<N, M> Node<N, M> {
-    pub fn new<F>(board: Board, node_data: N, mut move_data: F) -> Node<N, M>
+    /*pub fn new<F>(board: Board, node_data: N, mut move_data: F) -> Node<N, M>
         where
             F: FnMut(&Board, ChessMove) -> M
     {
@@ -29,7 +29,7 @@ impl<N, M> Node<N, M> {
             node_data,
             moves: branches
         }
-    }
+    }*/
 
     pub fn count_nodes(&self) -> u32 {
         //let mut count = 1;
@@ -58,11 +58,11 @@ impl<N, M> Node<N, M> {
 }
 
 impl<N, M> Branch<N, M> {
-    pub fn new(mv: ChessMove, mv_data: M) -> Branch<N, M> {
+    /*pub fn new(mv: ChessMove, mv_data: M) -> Branch<N, M> {
         Branch::<N, M> {
             mv,
             mv_data,
             child_node: None
         }
-    }
+    }*/
 }
