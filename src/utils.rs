@@ -38,7 +38,7 @@ impl<K, V> Ord for OrdByKey<K, V>
     }
 }
 
-impl<K, V> OrdByKey<K, V> {
+/*impl<K, V> OrdByKey<K, V> {
     pub fn new(key: K, value: V) -> Self {
         OrdByKey (
             KeyValue {
@@ -47,7 +47,7 @@ impl<K, V> OrdByKey<K, V> {
             }
         )
     }
-}
+}*/
 
 /* A simple key-value, that isn't ordered */
 

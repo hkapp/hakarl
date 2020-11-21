@@ -1,10 +1,10 @@
 use std::io;
-use crate::utils::KeyValue;
+use crate::utils::display;
 use std::fmt;
 
 /* Core DS */
 
-struct Graph {
+pub struct Graph {
     nodes:  Vec<Node>,
     edges:  Vec<Edge>,
 
@@ -14,21 +14,21 @@ struct Graph {
     global_edge_config: EdgeConfig
 }
 
-type NodeId = String;
-struct Node {
+pub type NodeId = String;
+pub struct Node {
     id:     NodeId,
     config: NodeConfig
 }
 
-struct Edge {
+pub struct Edge {
     source:      NodeId,
     destination: NodeId,
     config:      EdgeConfig
 }
 
-/* Configs */
+/* Configs (old) */
 
-struct Loose<T> {
+/*struct Loose<T> {
     strict_config: T,
     loose_config:  LooseConfig
 }
@@ -41,7 +41,34 @@ struct StrictNodeConfig { }
 struct StrictEdgeConfig { }
 struct StrictGraphConfig { }
 
-type LooseConfig = Vec<KeyValue<String, String>>;
+type LooseConfig = Vec<KeyValue<String, String>>;*/
+
+/* Configs */
+
+struct Config<T> {
+    props: Vec<T>
+}
+
+type NodeConfig = Config<NodeProp>;
+type EdgeConfig = Config<EdgeProp>;
+type GraphConfig = Config<GraphProp>;
+
+#[allow(dead_code)]
+pub enum NodeProp {
+    Label(String),
+    KeyValue { key: String, value: String }
+}
+
+#[allow(dead_code)]
+pub enum EdgeProp {
+    Label(String),
+    KeyValue { key: String, value: String }
+}
+
+#[allow(dead_code)]
+pub enum GraphProp {
+    KeyValue { key: String, value: String }
+}
 
 /* Graph API */
 
@@ -65,6 +92,23 @@ impl Graph {
 
     pub fn add_edge(&mut self, edge: Edge) {
         self.edges.push(edge)
+    }
+
+    #[allow(dead_code)]
+    pub fn set_graph_prop(mut self, prop: GraphProp) -> Self {
+        self.graph_config.set(prop);
+        return self;
+    }
+
+    pub fn set_node_global(mut self, prop: NodeProp) -> Self {
+        self.global_node_config.set(prop);
+        return self;
+    }
+
+    #[allow(dead_code)]
+    pub fn set_edge_global(mut self, prop: EdgeProp) -> Self {
+        self.global_edge_config.set(prop);
+        return self;
     }
 
     pub fn write_to<W: io::Write>(&self, mut writer: W) -> WriteResult {
@@ -100,10 +144,15 @@ impl Node {
         }
     }
 
-    pub fn set_conf_str(&mut self, key: String, value: String) {
+    /*pub fn set_conf_str(&mut self, key: String, value: String) {
         self.config.loose_config.push(
             KeyValue { key, value }
         )
+    }*/
+
+    pub fn set(mut self, prop: NodeProp) -> Self {
+        self.config.set(prop);
+        return self;
     }
 }
 
@@ -117,10 +166,27 @@ impl Edge {
         }
     }
 
-    pub fn set_conf_str(&mut self, key: String, value: String) {
+    /*pub fn set_conf_str(&mut self, key: String, value: String) {
         self.config.loose_config.push(
             KeyValue { key, value }
         )
+    }*/
+
+    pub fn set(mut self, prop: EdgeProp) -> Self {
+        self.config.set(prop);
+        return self;
+    }
+}
+
+/* Config API */
+
+impl<T> Config<T> {
+    fn is_empty(&self) -> bool {
+        self.props.is_empty()
+    }
+
+    fn set(&mut self, prop: T) {
+        self.props.push(prop)
     }
 }
 
@@ -128,24 +194,20 @@ impl Edge {
 
 type WriteResult = io::Result<()>;
 
-fn write_all<W, I>(iter: I, writer: &mut W) -> WriteResult
+fn write_all<W, I, D>(iter: I, writer: &mut W) -> WriteResult
     where
         W: io::Write,
-        I: Iterator<Item = String>
+        I: Iterator<Item = D>,
+        D: fmt::Display
 {
-    for s in iter {
-        writeln!(writer, "{}", s)?;
+    for item in iter {
+        writeln!(writer, "{}", item)?;
     }
     Ok(())
 }
 
 fn write_graph_config<W: io::Write>(conf: &GraphConfig, writer: &mut W) -> WriteResult {
-    write_all(
-        conf.as_string_pairs()
-            .into_iter()
-            .map(|KeyValue { key, value }| format_assignment(key, value)),
-        writer
-    )
+    write_all(conf.props.iter(), writer)
 }
 
 fn write_global_node_config<W: io::Write>(node_conf: &NodeConfig, writer: &mut W) -> WriteResult {
@@ -157,22 +219,16 @@ fn write_global_edge_config<W: io::Write>(edge_conf: &EdgeConfig, writer: &mut W
 }
 
 fn write_all_nodes<W: io::Write>(nodes: &[Node], writer: &mut W) -> WriteResult {
-    write_all(
-        nodes.iter()
-            .map(|node| format!("{}", node)),
-        writer)
+    write_all(nodes.iter(), writer)
 }
 
 fn write_all_edges<W: io::Write>(edges: &[Edge], writer: &mut W) -> WriteResult {
-    write_all(
-        edges.iter()
-            .map(|edge| format!("{}", edge)),
-        writer)
+    write_all(edges.iter(), writer)
 }
 
 /* Basic formatting */
 
-fn format_assignment(lhs: String, rhs: String) -> String {
+fn format_assignment(lhs: &str, rhs: &str) -> String {
     format!("{}={}", lhs, rhs)
 }
 
@@ -198,10 +254,92 @@ impl fmt::Display for Edge {
     }
 }
 
+impl<T: fmt::Display> fmt::Display for Config<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let formatted_props =
+            self.props
+                .iter()
+                .map(|p| format!("{}", p));
+
+        write!(f, "{}", display::enclosed_join(formatted_props, "[", ", ", "]"))
+    }
+}
+
+impl fmt::Display for NodeProp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", format_assignment(self.key_str(), self.val_str()))
+    }
+}
+
+impl fmt::Display for EdgeProp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", format_assignment(self.key_str(), self.val_str()))
+    }
+}
+
+impl fmt::Display for GraphProp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", format_assignment(self.key_str(), self.val_str()))
+    }
+}
+
+/* Property trait */
+
+trait Property {
+    fn key_str(&self) -> &str;
+    fn val_str(&self) -> &str;
+}
+
+impl Property for NodeProp {
+    fn key_str(&self) -> &str {
+        match self {
+            NodeProp::Label(_)             => "label",
+            NodeProp::KeyValue { key, .. } => key
+        }
+    }
+
+    fn val_str(&self) -> &str {
+        match self {
+            NodeProp::Label(lab)             => lab,
+            NodeProp::KeyValue { value, .. } => value
+        }
+    }
+}
+
+impl Property for EdgeProp {
+    fn key_str(&self) -> &str {
+        match self {
+            EdgeProp::Label(_)             => "label",
+            EdgeProp::KeyValue { key, .. } => key
+        }
+    }
+
+    fn val_str(&self) -> &str {
+        match self {
+            EdgeProp::Label(lab)             => lab,
+            EdgeProp::KeyValue { value, .. } => value
+        }
+    }
+}
+
+impl Property for GraphProp {
+    fn key_str(&self) -> &str {
+        match self {
+            GraphProp::KeyValue { key, .. } => key
+        }
+    }
+
+    fn val_str(&self) -> &str {
+        match self {
+            GraphProp::KeyValue { value, .. } => value
+        }
+    }
+}
+
 /* Can't derive fmt::Display from Config
  * see https://stackoverflow.com/questions/31082179/is-there-a-way-to-implement-a-trait-on-top-of-another-trait
  */
-fn fmt_config<C: Config>(conf: &C, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+/*fn fmt_config<C: Config>(conf: &C, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "[")?;
     let mut sep = "";
     for KeyValue { key, value } in conf.as_string_pairs() {
@@ -221,11 +359,11 @@ impl fmt::Display for EdgeConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_config(self, f)
     }
-}
+}*/
 
 /* Config trait */
 
-trait Config {
+/*trait Config {
     fn as_string_pairs(&self) -> Vec<KeyValue<String, String>>;
 
     fn is_empty(&self) -> bool;
@@ -299,5 +437,15 @@ impl Default for StrictEdgeConfig {
 impl Default for StrictGraphConfig {
     fn default() -> Self {
         Self {}
+    }
+}*/
+
+/* Default implementations */
+
+impl<T> Default for Config<T> {
+    fn default() -> Self {
+        Self {
+            props: Vec::new()
+        }
     }
 }

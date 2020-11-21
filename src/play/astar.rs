@@ -13,6 +13,8 @@ use crate::logging;
 use crate::utils::fairheap::FairHeap;
 use std::cmp;
 use crate::utils::{Either, Either::Left, Either::Right};
+use crate::utils::dot;
+use std::io;
 
 pub struct AStar {
     time_budget: Duration,
@@ -525,4 +527,88 @@ pub fn astar_player(time_budget: Duration) -> impl ChessPlayer {
         time_budget,
         eval: eval::classic_eval,
     }
+}
+
+/* Further debugging services */
+
+impl AStar {
+    #[allow(dead_code)]
+    pub fn write_res_tree<W>(
+        &mut self,
+        board:       &Board,
+        logger:      &mut super::Logger,
+        tree_writer: &mut W)
+        -> io::Result<ChessMove>
+        where
+            W: io::Write
+    {
+        let search_tree = astar_search(board, self.eval, self.time_budget);
+
+        let dot_graph = build_dot_graph(&search_tree);
+        dot_graph.write_to(tree_writer)
+            .map(|_| finalize(&search_tree, self.eval, self.time_budget, logger))
+    }
+}
+
+fn build_dot_graph(tree: &SearchTree) -> dot::Graph {
+    fn node_id_from_board(board: &Board) -> dot::NodeId {
+        /* FIXME need unique ids here */
+        format!("{}", board.get_hash())
+    }
+
+    fn build_dot_node(board: &Board) -> dot::Node {
+        let node_id = node_id_from_board(board);
+
+        dot::Node::new(node_id)
+                /* TODO set the value of the board here */
+    }
+
+    fn rec_add_node(node: &SearchNode, graph: &mut dot::Graph) {
+        let board = &node.board;
+        let dot_node = build_dot_node(board);
+        graph.add_node(dot_node);
+
+        for branch in node.moves.iter() {
+            rec_add_edge(branch, board, graph);
+        }
+    }
+
+    fn rec_add_edge(edge: &SearchMove, prev_board: &Board, graph: &mut dot::Graph) {
+        let next_board = match edge.child_node.as_ref() {
+            Some(node) => node.board.clone(),
+            None       => prev_board.make_move_new(edge.mv),
+        };
+        let next_board = &next_board;
+
+        let src_id = node_id_from_board(prev_board);
+        let dst_id = node_id_from_board(next_board);
+
+        let dot_edge =
+            dot::Edge::new(src_id, dst_id)
+                .set(dot::EdgeProp::Label(format!("{}", edge.mv)));
+
+        graph.add_edge(dot_edge);
+
+        match edge.child_node.as_ref() {
+            Some(node) => rec_add_node(node, graph),
+            None        => {
+                let dest_node =
+                    build_dot_node(next_board)
+                        .set(dot::NodeProp::KeyValue {
+                            key:   String::from("style"),
+                            value: String::from("dotted")
+                        });
+                graph.add_node(dest_node)
+            }
+        }
+    }
+
+    let mut graph =
+        dot::Graph::default()
+            .set_node_global(dot::NodeProp::KeyValue {
+                key:   String::from("shape"),
+                value: String::from("circle")
+            });
+    rec_add_node(tree, &mut graph);
+    return graph;
 }
