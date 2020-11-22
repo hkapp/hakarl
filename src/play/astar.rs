@@ -522,7 +522,7 @@ fn best_mv_idx(node: &SearchNode) -> Option<usize> {
 }
 
 #[allow(dead_code)]
-pub fn astar_player(time_budget: Duration) -> impl ChessPlayer {
+pub fn astar_player(time_budget: Duration) -> AStar {
     AStar {
         time_budget,
         eval: eval::classic_eval,
@@ -544,36 +544,42 @@ impl AStar {
     {
         let search_tree = astar_search(board, self.eval, self.time_budget);
 
-        let dot_graph = build_dot_graph(&search_tree);
+        let dot_graph = build_dot_graph(&search_tree, self.eval);
         dot_graph.write_to(tree_writer)
             .map(|_| finalize(&search_tree, self.eval, self.time_budget, logger))
     }
 }
 
-fn build_dot_graph(tree: &SearchTree) -> dot::Graph {
+fn build_dot_graph(tree: &SearchTree, eval_fun: EvalFun) -> dot::Graph {
     fn node_id_from_board(board: &Board) -> dot::NodeId {
         /* FIXME need unique ids here */
         format!("{}", board.get_hash())
     }
 
-    fn build_dot_node(board: &Board) -> dot::Node {
+    fn build_dot_node(board: &Board, eval_fun: EvalFun, eval_player: Color) -> dot::Node {
         let node_id = node_id_from_board(board);
 
         dot::Node::new(node_id)
-                /* TODO set the value of the board here */
+            .set(dot::NodeProp::Label(format!("{}", eval_fun(board, eval_player))))
     }
 
-    fn rec_add_node(node: &SearchNode, graph: &mut dot::Graph) {
+    fn rec_add_node(node: &SearchNode, eval_fun: EvalFun, eval_player: Color, graph: &mut dot::Graph) {
         let board = &node.board;
-        let dot_node = build_dot_node(board);
+        let dot_node = build_dot_node(board, eval_fun, eval_player);
         graph.add_node(dot_node);
 
         for branch in node.moves.iter() {
-            rec_add_edge(branch, board, graph);
+            rec_add_edge(branch, board, eval_fun, eval_player, graph);
         }
     }
 
-    fn rec_add_edge(edge: &SearchMove, prev_board: &Board, graph: &mut dot::Graph) {
+    fn rec_add_edge(
+        edge:        &SearchMove,
+        prev_board:  &Board,
+        eval_fun:    EvalFun,
+        eval_player: Color,
+        graph:       &mut dot::Graph)
+    {
         let next_board = match edge.child_node.as_ref() {
             Some(node) => node.board.clone(),
             None       => prev_board.make_move_new(edge.mv),
@@ -590,10 +596,10 @@ fn build_dot_graph(tree: &SearchTree) -> dot::Graph {
         graph.add_edge(dot_edge);
 
         match edge.child_node.as_ref() {
-            Some(node) => rec_add_node(node, graph),
+            Some(node) => rec_add_node(node, eval_fun, eval_player, graph),
             None        => {
                 let dest_node =
-                    build_dot_node(next_board)
+                    build_dot_node(next_board, eval_fun, eval_player)
                         .set(dot::NodeProp::KeyValue {
                             key:   String::from("style"),
                             value: String::from("dotted")
@@ -603,12 +609,16 @@ fn build_dot_graph(tree: &SearchTree) -> dot::Graph {
         }
     }
 
+    let eval_player = tree.board.side_to_move();
+
     let mut graph =
         dot::Graph::default()
             .set_node_global(dot::NodeProp::KeyValue {
                 key:   String::from("shape"),
                 value: String::from("circle")
             });
-    rec_add_node(tree, &mut graph);
+
+    rec_add_node(tree, eval_fun, eval_player, &mut graph);
+
     return graph;
 }

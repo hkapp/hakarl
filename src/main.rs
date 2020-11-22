@@ -9,7 +9,7 @@ mod eval;
 mod play;
 mod utils;
 
-use chess::BoardStatus;
+use chess::{Board, BoardStatus};
 use play::Game;
 use std::fs::File;
 use std::path::Path;
@@ -17,14 +17,28 @@ use std::io::Write;
 use std::time::Duration;
 
 fn main() {
-    //let mut white = play::evaldriven::classic_eval_player();
-    //let mut white = play::montecarlo::basic_monte_carlo1();
-    //let mut white = play::evaldriven::classic_eval_player();
-    //let mut white = play::exhaustive::exhaustive_search_player(2);
-    let mut white = play::astar::astar_player(Duration::from_millis(30));
-    let mut black = play::astar::asprl::parallel_player(Duration::from_millis(30), 4);
+    //let white = play::evaldriven::classic_eval_player();
+    //let white = play::montecarlo::basic_monte_carlo1();
+    //let white = play::evaldriven::classic_eval_player();
+    //let white = play::exhaustive::exhaustive_search_player(2);
+    let white = play::astar::astar_player(Duration::from_millis(5));
+    let black = play::astar::asprl::parallel_player(Duration::from_millis(30), 4);
 
     let log_level = logging::LogLevel::Debug;
+
+    //play_a_game(white, black, log_level);
+    print_tree(white, log_level);
+}
+
+const LOG_FILE_PATH: &str = "games/last_game.log";
+const PGN_FILE_PATH: &str = "games/last_game.pgn";
+
+#[allow(dead_code)]
+fn play_a_game<P1, P2>(mut white: P1, mut black: P2, log_level: logging::LogLevel)
+    where
+        P1: play::ChessPlayer,
+        P2: play::ChessPlayer
+{
     let mut game_logger = logging::log_to_file(&Path::new(LOG_FILE_PATH), log_level)
                                     .expect(&format!("Couldn't open file {}", LOG_FILE_PATH));
 
@@ -46,9 +60,6 @@ fn main() {
     };
 }
 
-const LOG_FILE_PATH: &str = "games/last_game.log";
-const PGN_FILE_PATH: &str = "games/last_game.pgn";
-
 fn open_file_for_write(path: &Path) -> File {
     match File::create(path) {
         Ok(file)    => file,
@@ -62,4 +73,13 @@ fn print_end_of_game(game: &Game) {
         BoardStatus::Stalemate => println!("The game is a draw!"),
         BoardStatus::Ongoing   => println!("Maximum number of moves reached")
     }
+}
+
+fn print_tree(mut white: play::astar::AStar, log_level: logging::LogLevel)
+{
+    let mut logger = logging::log_to_file(&Path::new(LOG_FILE_PATH), log_level)
+                                    .expect(&format!("Couldn't open file {}", LOG_FILE_PATH));
+
+    let mut tree_file = open_file_for_write(&Path::new("games/some_tree.dot"));
+    white.write_res_tree(&Board::default(), &mut logger, &mut tree_file).expect("Abort mission");
 }
