@@ -9,7 +9,7 @@ mod eval;
 mod play;
 mod utils;
 
-use chess::{Board, BoardStatus, Color};
+use chess::{Board, BoardStatus, Color, ChessMove};
 use play::Game;
 use std::fs::File;
 use std::path::Path;
@@ -17,6 +17,7 @@ use std::io::Write;
 use std::io;
 use std::time::Duration;
 
+#[allow(dead_code)]
 fn main() {
     //let white = play::evaldriven::classic_eval_player();
     //let white = play::montecarlo::basic_monte_carlo1();
@@ -28,8 +29,15 @@ fn main() {
     let log_level = logging::LogLevel::Debug;
 
     //play_a_game(white, black, log_level);
-    explain_move_from_prev_game(white, "games/debug_move_17.pgn", Color::Black, 17, log_level);
+    explain_move_from_prev_game(
+        white,
+        &Path::new("games/debug_move_17.pgn"),
+        Color::White,
+        17,
+        log_level);
 }
+
+/***********  PLAY **********/
 
 const LOG_FILE_PATH: &str = "games/last_game.log";
 const PGN_FILE_PATH: &str = "games/last_game.pgn";
@@ -76,18 +84,42 @@ fn print_end_of_game(game: &Game) {
     }
 }
 
+/***********  EXPLAIN **********/
+
+fn find_move_in_game(game: &play::Game, player: Color, turn: u16) -> Option<(Board, ChessMove)> {
+    let mut curr_board = game.init_board;
+    let mut curr_turn = 1;
+    for mv_ref in game.moves.iter() {
+        let curr_player = curr_board.side_to_move();
+        if curr_turn == turn && curr_player == player {
+            return Some((curr_board, *mv_ref));
+        }
+        else {
+            curr_board = curr_board.make_move_new(*mv_ref);
+            if curr_player == Color::Black {
+                curr_turn += 1;
+            }
+        }
+    }
+    None
+}
+
 fn explain_move_from_prev_game(
     mut player:   play::astar::AStar,
-    pgn_to_load:  &str,
+    pgn_to_load:  &Path,
     debug_player: Color,
     turn:         u16,
     log_level:    logging::LogLevel)
 {
     //let mut logger = logging::log_to_file(&Path::new(LOG_FILE_PATH), log_level)
                                     //.expect(&format!("Couldn't open file {}", LOG_FILE_PATH));
-    let mut logger = logging::log_to(io::stdout(), log_level);
+    let game_pgn = std::fs::read_to_string(pgn_to_load).unwrap();
+    let full_game = pgn::read_pgn(&game_pgn).unwrap();
+    let (debug_board, debug_mv) = find_move_in_game(&full_game, debug_player, turn).unwrap();
 
-    let out_path = Path::new("games/some_tree.dot");
-    let mut tree_file = open_file_for_write(&out_path);
-    player.write_res_tree(&Board::default(), &mut logger, &mut tree_file).expect("Abort mission");
+    let mut logger = logging::log_to(io::stdout(), log_level);
+    let dot_path = pgn_to_load.with_extension("dot");
+    let mut dot_file = open_file_for_write(&dot_path);
+    let played_mv = player.write_res_tree(&debug_board, &mut logger, &mut dot_file).unwrap();
+    assert_eq!(played_mv, debug_mv);
 }

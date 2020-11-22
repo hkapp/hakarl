@@ -613,6 +613,10 @@ fn build_dot_graph(tree: &SearchTree, eval_fun: EvalFun) -> dot::Graph {
 
     let mut graph =
         dot::Graph::default()
+            .set_global_config(dot::GraphProp::KeyValue {
+                key:   String::from("splines"),
+                value: String::from("line")
+            })
             .set_node_global(dot::NodeProp::KeyValue {
                 key:   String::from("shape"),
                 value: String::from("circle")
