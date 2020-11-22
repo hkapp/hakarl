@@ -22,6 +22,14 @@ pub struct Game {
 }
 
 impl Game {
+    pub fn new() -> Self {
+        Game {
+            init_board:  Board::default(),
+            final_board: Board::default(),
+            moves:       Vec::new()
+        }
+    }
+
     #[allow(dead_code)]
     pub fn is_over(&self) -> bool {
         self.final_board.status() != BoardStatus::Ongoing
@@ -44,6 +52,11 @@ impl Game {
 
             BoardStatus::Ongoing => None
         }
+    }
+
+    pub fn play_move(&mut self, mv: ChessMove) {
+        self.final_board = self.final_board.make_move_new(mv);
+        self.moves.push(mv);
     }
 
     pub fn continue_playing<P1: ChessPlayer, P2: ChessPlayer>(

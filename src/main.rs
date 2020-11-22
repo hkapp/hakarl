@@ -9,11 +9,12 @@ mod eval;
 mod play;
 mod utils;
 
-use chess::{Board, BoardStatus};
+use chess::{Board, BoardStatus, Color};
 use play::Game;
 use std::fs::File;
 use std::path::Path;
 use std::io::Write;
+use std::io;
 use std::time::Duration;
 
 fn main() {
@@ -27,7 +28,7 @@ fn main() {
     let log_level = logging::LogLevel::Debug;
 
     //play_a_game(white, black, log_level);
-    print_tree(white, log_level);
+    explain_move_from_prev_game(white, "games/debug_move_17.pgn", Color::Black, 17, log_level);
 }
 
 const LOG_FILE_PATH: &str = "games/last_game.log";
@@ -75,11 +76,18 @@ fn print_end_of_game(game: &Game) {
     }
 }
 
-fn print_tree(mut white: play::astar::AStar, log_level: logging::LogLevel)
+fn explain_move_from_prev_game(
+    mut player:   play::astar::AStar,
+    pgn_to_load:  &str,
+    debug_player: Color,
+    turn:         u16,
+    log_level:    logging::LogLevel)
 {
-    let mut logger = logging::log_to_file(&Path::new(LOG_FILE_PATH), log_level)
-                                    .expect(&format!("Couldn't open file {}", LOG_FILE_PATH));
+    //let mut logger = logging::log_to_file(&Path::new(LOG_FILE_PATH), log_level)
+                                    //.expect(&format!("Couldn't open file {}", LOG_FILE_PATH));
+    let mut logger = logging::log_to(io::stdout(), log_level);
 
-    let mut tree_file = open_file_for_write(&Path::new("games/some_tree.dot"));
-    white.write_res_tree(&Board::default(), &mut logger, &mut tree_file).expect("Abort mission");
+    let out_path = Path::new("games/some_tree.dot");
+    let mut tree_file = open_file_for_write(&out_path);
+    player.write_res_tree(&Board::default(), &mut logger, &mut tree_file).expect("Abort mission");
 }
