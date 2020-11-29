@@ -17,13 +17,13 @@ use std::io::Write;
 use std::io;
 use std::time::Duration;
 
-#[allow(dead_code)]
+#[allow(unused_variables)]
 fn main() {
     //let white = play::evaldriven::classic_eval_player();
     //let white = play::montecarlo::basic_monte_carlo1();
     //let white = play::evaldriven::classic_eval_player();
     //let white = play::exhaustive::exhaustive_search_player(2);
-    let white = play::astar::astar_player(Duration::from_millis(5));
+    let white = play::astar::astar_player(Duration::from_millis(30));
     let black = play::astar::asprl::parallel_player(Duration::from_millis(30), 4);
 
     let log_level = logging::LogLevel::Debug;
@@ -31,7 +31,7 @@ fn main() {
     //play_a_game(white, black, log_level);
     explain_move_from_prev_game(
         white,
-        &Path::new("games/debug_move_17.pgn"),
+        &Path::new("games/debug_astar_201115/debug_move_17.pgn"),
         Color::White,
         17,
         log_level);
@@ -120,6 +120,21 @@ fn explain_move_from_prev_game(
     let mut logger = logging::log_to(io::stdout(), log_level);
     let dot_path = pgn_to_load.with_extension("dot");
     let mut dot_file = open_file_for_write(&dot_path);
-    let played_mv = player.write_res_tree(&debug_board, &mut logger, &mut dot_file).unwrap();
-    assert_eq!(played_mv, debug_mv);
+    let max_retries = 120;
+    for try_count in 0..max_retries {
+        let played_mv = player.write_res_tree(&debug_board, &mut logger, &mut dot_file).unwrap();
+        if played_mv == debug_mv {
+            println!("Found the same move!");
+            return;
+        }
+        else if try_count < max_retries {
+            use io::Seek;
+            println!("Not the same move, retrying... ({})", try_count+1);
+            dot_file.seek(io::SeekFrom::Start(0))
+                .and_then(|_| dot_file.set_len(0))
+                .unwrap();
+        }
+    }
+    println!("Did not manage to find the same move, giving up");
+    //assert_eq!(played_mv, debug_mv);
 }

@@ -15,6 +15,7 @@ use std::cmp;
 use crate::utils::{Either, Either::Left, Either::Right};
 use crate::utils::dot;
 use std::io;
+use std::fmt;
 
 pub struct AStar {
     time_budget: Duration,
@@ -353,6 +354,12 @@ impl BothScores {
     }
 }
 
+impl fmt::Display for BothScores {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}; {}]", self.white_score, self.black_score)
+    }
+}
+
 //#[derive(Clone)]
 //struct MoveAgg {
     //scores: BothScores,
@@ -551,78 +558,50 @@ impl AStar {
 }
 
 fn build_dot_graph(tree: &SearchTree, eval_fun: EvalFun) -> dot::Graph {
-    fn node_id_from_board(board: &Board) -> dot::NodeId {
-        /* FIXME need unique ids here */
-        format!("{}", board.get_hash())
-    }
-
-    fn build_dot_node(board: &Board, eval_fun: EvalFun, eval_player: Color) -> dot::Node {
-        let node_id = node_id_from_board(board);
-
-        dot::Node::new(node_id)
-            .set(dot::NodeProp::Label(format!("{}", eval_fun(board, eval_player))))
-    }
-
-    fn rec_add_node(node: &SearchNode, eval_fun: EvalFun, eval_player: Color, graph: &mut dot::Graph) {
-        let board = &node.board;
-        let dot_node = build_dot_node(board, eval_fun, eval_player);
-        graph.add_node(dot_node);
-
-        for branch in node.moves.iter() {
-            rec_add_edge(branch, board, eval_fun, eval_player, graph);
-        }
-    }
-
-    fn rec_add_edge(
-        edge:        &SearchMove,
-        prev_board:  &Board,
-        eval_fun:    EvalFun,
-        eval_player: Color,
-        graph:       &mut dot::Graph)
-    {
-        let next_board = match edge.child_node.as_ref() {
-            Some(node) => node.board.clone(),
-            None       => prev_board.make_move_new(edge.mv),
-        };
-        let next_board = &next_board;
-
-        let src_id = node_id_from_board(prev_board);
-        let dst_id = node_id_from_board(next_board);
-
-        let dot_edge =
-            dot::Edge::new(src_id, dst_id)
-                .set(dot::EdgeProp::Label(format!("{}", edge.mv)));
-
-        graph.add_edge(dot_edge);
-
-        match edge.child_node.as_ref() {
-            Some(node) => rec_add_node(node, eval_fun, eval_player, graph),
-            None        => {
-                let dest_node =
-                    build_dot_node(next_board, eval_fun, eval_player)
-                        .set(dot::NodeProp::KeyValue {
-                            key:   String::from("style"),
-                            value: String::from("dotted")
-                        });
-                graph.add_node(dest_node)
-            }
-        }
-    }
 
     let eval_player = tree.board.side_to_move();
 
-    let mut graph =
-        dot::Graph::default()
-            .set_global_config(dot::GraphProp::KeyValue {
-                key:   String::from("splines"),
-                value: String::from("line")
+    let make_node = |dot_node: dot::Node, search_node: &SearchNode| {
+        use dot::NodeProp;
+
+        let value_now = eval_fun(&search_node.board, eval_player);
+        let value_later = best_scores(search_node, eval_fun).get(eval_player);
+        let label = format!("now: {}\\nlater: {}", value_now, value_later);
+        dot_node.set(
+            NodeProp::Label(label))
+    };
+
+    let make_edge = |dot_edge: dot::Edge, parent_node: &SearchNode, search_edge: &SearchMove| {
+        use dot::EdgeProp;
+
+        let label = format!("{}\\n{}", search_edge.mv, search_edge.mv_data);
+        let curr_player = parent_node.board.side_to_move();
+        let edge_score = search_edge.mv_data.get(curr_player);
+        let best_score = parent_node.node_data.peek().unwrap().score;
+        let thickness =
+            if edge_score == best_score { 2 }
+            else { 1 };
+        dot_edge
+            .set(EdgeProp::Label(label))
+            .set(EdgeProp::KeyValue{
+                key:   String::from("penwidth"),
+                value: format!("{}", thickness)
             })
-            .set_node_global(dot::NodeProp::KeyValue {
-                key:   String::from("shape"),
-                value: String::from("circle")
-            });
+    };
 
-    rec_add_node(tree, eval_fun, eval_player, &mut graph);
+    let make_leaf = |dot_node: dot::Node, parent_node: &SearchNode, ending_edge: &SearchMove| {
+        use dot::NodeProp;
 
-    return graph;
+        let leaf_board = parent_node.board.make_move_new(ending_edge.mv);
+        let label = format!("{}", eval_fun(&leaf_board, eval_player));
+
+        dot_node
+            .set(NodeProp::Label(label))
+            .set(NodeProp::KeyValue {
+                key:   String::from("style"),
+                value: String::from("dotted")
+            })
+    };
+
+    searchtree::build_dot_graph(tree, make_node, make_edge, Some(make_leaf))
 }

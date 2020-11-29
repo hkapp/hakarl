@@ -95,7 +95,7 @@ impl Graph {
     }
 
     #[allow(dead_code)]
-    pub fn set_graph_prop(mut self, prop: GraphProp) -> Self {
+    pub fn set_graph_global(mut self, prop: GraphProp) -> Self {
         self.graph_config.set(prop);
         return self;
     }
@@ -267,27 +267,32 @@ impl<T: fmt::Display> fmt::Display for Config<T> {
 
 impl fmt::Display for NodeProp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", format_assignment(self.key_str(), self.val_str()))
+        write!(f, "{}", format_assignment(self.key_str(), &self.val_str()))
     }
 }
 
 impl fmt::Display for EdgeProp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", format_assignment(self.key_str(), self.val_str()))
+        write!(f, "{}", format_assignment(self.key_str(), &self.val_str()))
     }
 }
 
 impl fmt::Display for GraphProp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", format_assignment(self.key_str(), self.val_str()))
+        write!(f, "{}", format_assignment(self.key_str(), &self.val_str()))
     }
+}
+
+fn format_label(label: &str) -> String {
+    /* FIXME need to escape too */
+    format!("\"{}\"", label)
 }
 
 /* Property trait */
 
 trait Property {
     fn key_str(&self) -> &str;
-    fn val_str(&self) -> &str;
+    fn val_str(&self) -> String;
 }
 
 impl Property for NodeProp {
@@ -298,10 +303,10 @@ impl Property for NodeProp {
         }
     }
 
-    fn val_str(&self) -> &str {
+    fn val_str(&self) -> String {
         match self {
-            NodeProp::Label(lab)             => lab,
-            NodeProp::KeyValue { value, .. } => value
+            NodeProp::Label(lab)             => format_label(lab),
+            NodeProp::KeyValue { value, .. } => String::from(value)
         }
     }
 }
@@ -314,10 +319,10 @@ impl Property for EdgeProp {
         }
     }
 
-    fn val_str(&self) -> &str {
+    fn val_str(&self) -> String {
         match self {
-            EdgeProp::Label(lab)             => lab,
-            EdgeProp::KeyValue { value, .. } => value
+            EdgeProp::Label(lab)             => format_label(lab),
+            EdgeProp::KeyValue { value, .. } => String::from(value)
         }
     }
 }
@@ -329,9 +334,9 @@ impl Property for GraphProp {
         }
     }
 
-    fn val_str(&self) -> &str {
+    fn val_str(&self) -> String {
         match self {
-            GraphProp::KeyValue { value, .. } => value
+            GraphProp::KeyValue { value, .. } => String::from(value)
         }
     }
 }
