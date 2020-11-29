@@ -5,7 +5,7 @@ use chess::{Board, BoardStatus, ChessMove, Color, MoveGen};
 use crate::eval;
 use crate::eval::EvalFun;
 use super::searchtree;
-use super::ChessPlayer;
+use super::{ChessPlayer, DebugPlayer};
 use std::time::{Duration, Instant};
 use crate::utils::display;
 use crate::utils::display::JsonBuilder;
@@ -14,7 +14,6 @@ use crate::utils::fairheap::FairHeap;
 use std::cmp;
 use crate::utils::{Either, Either::Left, Either::Right};
 use crate::utils::dot;
-use std::io;
 use std::fmt;
 
 pub struct AStar {
@@ -22,13 +21,30 @@ pub struct AStar {
     eval:        EvalFun,
 }
 
-impl ChessPlayer for AStar {
+/*impl ChessPlayer for AStar {
     fn pick_move(&mut self, board: &Board, logger: &mut super::Logger) -> ChessMove {
         let search_tree = astar_search(board, self.eval, self.time_budget);
 
         finalize(&search_tree, self.eval, self.time_budget, logger)
     }
 
+}*/
+
+pub struct OpaqueTree(SearchTree);
+impl DebugPlayer for AStar {
+    type DebugData = OpaqueTree;
+
+    fn compute_move(&mut self, board: &Board, logger: &mut super::Logger) -> Self::DebugData {
+        let search_tree = astar_search(board, self.eval, self.time_budget);
+
+        print_tree_statistics(&search_tree, self.eval, self.time_budget, logger);
+
+        OpaqueTree(search_tree)
+    }
+
+    fn best_move(&self, tree: &OpaqueTree) -> ChessMove {
+        best_move(&tree.0).unwrap()
+    }
 }
 
 fn finalize(
@@ -528,17 +544,18 @@ fn best_mv_idx(node: &SearchNode) -> Option<usize> {
     best_entry.map(|e| e.mv_idx)
 }
 
+const DEFAULT_EVAL_FUN: EvalFun = eval::classic_eval;
 #[allow(dead_code)]
 pub fn astar_player(time_budget: Duration) -> AStar {
     AStar {
         time_budget,
-        eval: eval::classic_eval,
+        eval: DEFAULT_EVAL_FUN,
     }
 }
 
 /* Further debugging services */
 
-impl AStar {
+/*impl AStar {
     #[allow(dead_code)]
     pub fn write_res_tree<W>(
         &mut self,
@@ -555,15 +572,18 @@ impl AStar {
         dot_graph.write_to(tree_writer)
             .map(|_| finalize(&search_tree, self.eval, self.time_budget, logger))
     }
+}*/
+
+pub fn build_dot_graph_from(player: &AStar, tree: &OpaqueTree) -> dot::Graph {
+    build_dot_graph(&tree.0, player.eval)
 }
 
 fn build_dot_graph(tree: &SearchTree, eval_fun: EvalFun) -> dot::Graph {
+    use dot::{NodeProp, EdgeProp, GraphProp};
 
     let eval_player = tree.board.side_to_move();
 
     let make_node = |dot_node: dot::Node, search_node: &SearchNode| {
-        use dot::NodeProp;
-
         let value_now = eval_fun(&search_node.board, eval_player);
         let value_later = best_scores(search_node, eval_fun).get(eval_player);
         let label = format!("now: {}\\nlater: {}", value_now, value_later);
@@ -572,26 +592,28 @@ fn build_dot_graph(tree: &SearchTree, eval_fun: EvalFun) -> dot::Graph {
     };
 
     let make_edge = |dot_edge: dot::Edge, parent_node: &SearchNode, search_edge: &SearchMove| {
-        use dot::EdgeProp;
-
         let label = format!("{}\\n{}", search_edge.mv, search_edge.mv_data);
         let curr_player = parent_node.board.side_to_move();
         let edge_score = search_edge.mv_data.get(curr_player);
         let best_score = parent_node.node_data.peek().unwrap().score;
-        let thickness =
-            if edge_score == best_score { 2 }
-            else { 1 };
-        dot_edge
-            .set(EdgeProp::Label(label))
-            .set(EdgeProp::KeyValue{
+
+        let mut res_dot_edge = dot_edge.set(EdgeProp::Label(label));
+        if edge_score == best_score {
+            res_dot_edge = res_dot_edge.set(EdgeProp::KeyValue{
                 key:   String::from("penwidth"),
-                value: format!("{}", thickness)
+                value: String::from("2")
+            });
+        }
+        else {
+            res_dot_edge = res_dot_edge.set(EdgeProp::KeyValue{
+                key:   String::from("color"),
+                value: String::from("lightgrey")
             })
+        }
+        return res_dot_edge;
     };
 
     let make_leaf = |dot_node: dot::Node, parent_node: &SearchNode, ending_edge: &SearchMove| {
-        use dot::NodeProp;
-
         let leaf_board = parent_node.board.make_move_new(ending_edge.mv);
         let label = format!("{}", eval_fun(&leaf_board, eval_player));
 
@@ -603,5 +625,13 @@ fn build_dot_graph(tree: &SearchTree, eval_fun: EvalFun) -> dot::Graph {
             })
     };
 
-    searchtree::build_dot_graph(tree, make_node, make_edge, Some(make_leaf))
+    searchtree::build_dot_graph(tree, make_node, make_edge, make_leaf)
+        .set_graph_global(GraphProp::KeyValue {
+            key:   String::from("splines"),
+            value: String::from("false")
+        })
+        .set_node_global(NodeProp::KeyValue {
+            key:   String::from("shape"),
+            value: String::from("rect")
+        })
 }

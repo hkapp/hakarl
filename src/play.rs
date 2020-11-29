@@ -11,9 +11,31 @@ mod searchtree;
 
 pub type Logger = dyn logging::Logger;
 
+/********** ChessPlayer *********/
+
 pub trait ChessPlayer {
     fn pick_move(&mut self, board: &Board, logger: &mut Logger) -> ChessMove;
 }
+
+/********** DebugPlayer **********/
+
+pub trait DebugPlayer {
+    type DebugData;
+
+    fn compute_move(&mut self, board: &Board, logger: &mut Logger) -> Self::DebugData;
+
+    fn best_move(&self, data: &Self::DebugData) -> ChessMove;
+
+}
+
+impl<T: DebugPlayer> ChessPlayer for T {
+    fn pick_move(&mut self, board: &Board, logger: &mut Logger) -> ChessMove {
+        let data = self.compute_move(board, logger);
+        self.best_move(&data)
+    }
+}
+
+/********** Game **********/
 
 pub struct Game {
     pub init_board:  Board,

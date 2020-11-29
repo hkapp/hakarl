@@ -71,59 +71,49 @@ impl<N, M> Branch<N, M> {
     }*/
 }
 
-/********** TreePlayer **********/
-
-pub trait TreePlayer {
-    type NodeData;
-    type BranchData;
-
-    fn build_tree(&mut self, board: &Board, logger: &mut super::Logger) -> Tree<Self::NodeData, Self::BranchData>;
-
-    fn best_move(&self, tree: &Tree<Self::NodeData, Self::BranchData>) -> ChessMove;
-
-}
-
-impl<T: TreePlayer> super::ChessPlayer for T {
-    fn pick_move(&mut self, board: &Board, logger: &mut super::Logger) -> ChessMove {
-        let t = self.build_tree(board, logger);
-        self.best_move(&t)
-    }
-}
-
 /********** Dot generation **********/
 
-pub fn build_dot_graph<N, M, FN, FE, FL>(tree: &Tree<N, M>, make_node: FN, make_edge: FE, make_leaf: Option<FL>)
+pub fn build_dot_graph<N, M, FN, FE, FL>(tree: &Tree<N, M>, make_node: FN, make_edge: FE, make_leaf: FL)
     -> dot::Graph
     where
         FN: Fn(dot::Node, &Node<N, M>) -> dot::Node,
         FE: Fn(dot::Edge, &Node<N, M>, &Branch<N, M>) -> dot::Edge,
         FL: Fn(dot::Node, &Node<N, M>, &Branch<N, M>) -> dot::Node,
 {
-    fn node_id_from_board(board: &Board) -> dot::NodeId {
-        /* FIXME need unique ids here */
-        format!("{}", board.get_hash())
+    fn node_id_for<T>(any_ref: &T) -> dot::NodeId {
+        /* Printing the actual pointer should be enough to guarantee uniqueness */
+        /* turns out the pointer for the leaves are all the same (which makes sense) */
+        let mut hex_str = format!("{:p}", any_ref);
+        hex_str.remove(0);  // drop the initial '0', dot doesn't like it
+        return hex_str;
     }
 
-    fn build_dot_node<F>(board: &Board, make_node: F) -> dot::Node
-        where F: Fn(dot::Node) -> dot::Node,
-    {
-        let node_id = node_id_from_board(board);
+    fn new_node<T>(any_ref: &T) -> dot::Node {
+        let node_id = node_id_for(any_ref);
 
-        make_node(dot::Node::new(node_id))
+        dot::Node::new(node_id)
     }
+
+    //fn build_dot_node<FN>(search_node: &SearchNode, make_node: F) -> dot::Node
+        //where F: Fn(dot::Node) -> dot::Node,
+    //{
+        //let node_id = node_id_for(board);
+
+        //make_node(dot::Node::new(node_id))
+    //}
 
     fn rec_add_node<N, M, FN, FE, FL>(
         node:      &Node<N, M>,
         make_node: &FN,
         make_edge: &FE,
-        make_leaf: &Option<FL>,
+        make_leaf: &FL,
         graph:     &mut dot::Graph)
         where
             FN: Fn(dot::Node, &Node<N, M>) -> dot::Node,
             FE: Fn(dot::Edge, &Node<N, M>, &Branch<N, M>) -> dot::Edge,
             FL: Fn(dot::Node, &Node<N, M>, &Branch<N, M>) -> dot::Node,
     {
-        let dot_node = build_dot_node(&node.board, |n| make_node(n, node));
+        let dot_node = make_node(new_node(node), node);
         graph.add_node(dot_node);
 
         for branch in node.moves.iter() {
@@ -136,22 +126,21 @@ pub fn build_dot_graph<N, M, FN, FE, FL>(tree: &Tree<N, M>, make_node: FN, make_
         edge:        &Branch<N, M>,
         make_node:   &FN,
         make_edge:   &FE,
-        make_leaf:   &Option<FL>,
+        make_leaf:   &FL,
         graph:       &mut dot::Graph)
         where
             FN: Fn(dot::Node, &Node<N, M>) -> dot::Node,
             FE: Fn(dot::Edge, &Node<N, M>, &Branch<N, M>) -> dot::Edge,
             FL: Fn(dot::Node, &Node<N, M>, &Branch<N, M>) -> dot::Node,
     {
-        let prev_board = &parent_node.board;
-        let next_board = match edge.child_node.as_ref() {
-            Some(node) => node.board.clone(),
-            None       => prev_board.make_move_new(edge.mv),
-        };
-        let next_board = &next_board;
+        //let prev_board = &parent_node.board;
+        //let next_board = &next_board;
 
-        let src_id = node_id_from_board(prev_board);
-        let dst_id = node_id_from_board(next_board);
+        let src_id = node_id_for(parent_node);
+        let dst_id = match edge.child_node.as_ref() {
+            Some(child_node) => node_id_for(child_node),
+            None             => node_id_for(edge),
+        };
 
         let dot_edge = make_edge(dot::Edge::new(src_id, dst_id),
                                  parent_node, edge);
@@ -160,8 +149,8 @@ pub fn build_dot_graph<N, M, FN, FE, FL>(tree: &Tree<N, M>, make_node: FN, make_
 
         match edge.child_node.as_ref() {
             Some(child_node) => rec_add_node(child_node, make_node, make_edge, make_leaf, graph),
-            None             => if let Some(make_child) = make_leaf {
-                let dest_node = build_dot_node(prev_board, |n| make_child(n, parent_node, edge));
+            None             => {
+                let dest_node = make_leaf(new_node(edge), parent_node, edge);
                 graph.add_node(dest_node)
             }
         }
@@ -176,28 +165,23 @@ pub fn build_dot_graph<N, M, FN, FE, FL>(tree: &Tree<N, M>, make_node: FN, make_
 
 #[allow(dead_code)]
 pub fn basic_dot_graph<N, M>(tree: &Tree<N, M>, eval_fun: EvalFun) -> dot::Graph {
+    use dot::{NodeProp, EdgeProp, GraphProp};
 
     let eval_player = tree.board.side_to_move();
 
     let make_node = |dot_node: dot::Node, search_node: &Node<N, M>| {
-        use dot::NodeProp;
-
         let label = format!("{}", eval_fun(&search_node.board, eval_player));
         dot_node.set(
             NodeProp::Label(label))
     };
 
     let make_edge = |dot_edge: dot::Edge, _parent_node: &Node<N, M>, search_edge: &Branch<N, M>| {
-        use dot::EdgeProp;
-
         let label = format!("{}", search_edge.mv);
         dot_edge.set(
             EdgeProp::Label(label))
     };
 
     let make_leaf = |dot_node: dot::Node, parent_node: &Node<N, M>, ending_edge: &Branch<N, M>| {
-        use dot::NodeProp;
-
         let leaf_board = parent_node.board.make_move_new(ending_edge.mv);
         let label = format!("{}", eval_fun(&leaf_board, eval_player));
 
@@ -209,5 +193,13 @@ pub fn basic_dot_graph<N, M>(tree: &Tree<N, M>, eval_fun: EvalFun) -> dot::Graph
             })
     };
 
-    build_dot_graph(tree, make_node, make_edge, Some(make_leaf))
+    build_dot_graph(tree, make_node, make_edge, make_leaf)
+        .set_graph_global(GraphProp::KeyValue {
+            key:   String::from("splines"),
+            value: String::from("false")
+        })
+        .set_node_global(NodeProp::KeyValue {
+            key:   String::from("shape"),
+            value: String::from("circle")
+        })
 }

@@ -118,21 +118,30 @@ fn explain_move_from_prev_game(
     let (debug_board, debug_mv) = find_move_in_game(&full_game, debug_player, turn).unwrap();
 
     let mut logger = logging::log_to(io::stdout(), log_level);
-    let dot_path = pgn_to_load.with_extension("dot");
-    let mut dot_file = open_file_for_write(&dot_path);
-    let max_retries = 120;
+    let max_retries = 500;
     for try_count in 0..max_retries {
-        let played_mv = player.write_res_tree(&debug_board, &mut logger, &mut dot_file).unwrap();
+        use play::DebugPlayer;
+        let search_tree = player.compute_move(&debug_board, &mut logger);
+        let played_mv = player.best_move(&search_tree);
+
+        //let played_mv = player.write_res_tree(&debug_board, &mut logger, &mut dot_file).unwrap();
+
         if played_mv == debug_mv {
-            println!("Found the same move!");
+            use play::astar;
+            println!("Found the same move! ({})", debug_mv);
+            let dot_graph = astar::build_dot_graph_from(&player, &search_tree);
+
+            let dot_path = pgn_to_load.with_extension("dot");
+            let mut dot_file = open_file_for_write(&dot_path);
+            match dot_graph.write_to(&mut dot_file) {
+                Ok(_) => println!("Written to {:?}", dot_path),
+                Err(e) => println!("{:?}", e)
+            }
+                //.map(|_| finalize(&search_tree, self.eval, self.time_budget, logger))
             return;
         }
         else if try_count < max_retries {
-            use io::Seek;
             println!("Not the same move, retrying... ({})", try_count+1);
-            dot_file.seek(io::SeekFrom::Start(0))
-                .and_then(|_| dot_file.set_len(0))
-                .unwrap();
         }
     }
     println!("Did not manage to find the same move, giving up");
