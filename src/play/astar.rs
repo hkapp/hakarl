@@ -16,6 +16,8 @@ use crate::utils::{Either, Either::Left, Either::Right};
 use crate::utils::dot;
 use std::fmt;
 
+/* AStar ChessPlayer */
+
 pub struct AStar {
     time_budget: Duration,
     eval:        EvalFun,
@@ -31,6 +33,7 @@ pub struct AStar {
 }*/
 
 pub struct OpaqueTree(SearchTree);
+
 impl DebugPlayer for AStar {
     type DebugData = OpaqueTree;
 
@@ -46,6 +49,410 @@ impl DebugPlayer for AStar {
         best_move(&tree.0).unwrap()
     }
 }
+
+const DEFAULT_EVAL_FUN: EvalFun = eval::classic_eval;
+#[allow(dead_code)]
+pub fn astar_player(time_budget: Duration) -> AStar {
+    AStar {
+        time_budget,
+        eval: DEFAULT_EVAL_FUN,
+    }
+}
+
+/* Data structures used for the search */
+
+type SearchTree = SearchNode;
+type SearchNode = searchtree::Node<NodeData, MoveData>;
+type SearchMove = searchtree::Branch<NodeData, MoveData>;
+
+type MaxHeap<T>  = FairHeap<T>;
+type NodeData    = MaxHeap<HeapEntry>;
+
+/* HeapEntry */
+#[derive(Eq, Clone, Copy)]
+struct HeapEntry {
+    score:  eval::Score,
+    mv_idx: usize
+}
+
+/* We sort by score in the heap */
+impl PartialOrd for HeapEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        self.score.partial_cmp(&other.score)
+    }
+}
+
+impl PartialEq for HeapEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.score == other.score
+    }
+}
+
+impl Ord for HeapEntry {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.score.cmp(&other.score)
+    }
+}
+
+/* BothScores */
+type MoveData   = BothScores;
+
+#[derive(Clone, Copy)]
+struct BothScores {
+    white_score: eval::Score,
+    black_score: eval::Score,
+}
+
+impl BothScores {
+    fn new(white_score: eval::Score, black_score: eval::Score) -> Self {
+        BothScores {
+            white_score,
+            black_score
+        }
+    }
+
+    fn get(&self, player: Color) -> eval::Score {
+        //self.0[player.as_index()]
+        match player {
+            Color::White => self.white_score,
+            Color::Black => self.black_score,
+        }
+    }
+
+    fn build_from(board: &Board, eval: EvalFun) -> Self {
+        Self::new(
+            eval(board, Color::White),
+            eval(board, Color::Black)
+        )
+    }
+}
+
+impl fmt::Display for BothScores {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}; {}]", self.white_score, self.black_score)
+    }
+}
+
+/********** AStar search code **********/
+
+fn astar_search(
+    board:       &Board,
+    eval_fun:    EvalFun,
+    time_budget: Duration)
+    -> SearchTree
+{
+    let start_time = Instant::now();
+    let mut tree = init_root(board.clone(), eval_fun);
+
+    while start_time.elapsed() < time_budget {
+        descent(&mut tree, eval_fun);
+    }
+
+    return tree;
+}
+
+fn init_root(init_board: Board, eval_fun: EvalFun) -> SearchTree {
+    new_node(init_board, eval_fun)
+}
+
+fn descent(node: &mut SearchNode, eval_fun: EvalFun) -> BothScores {
+    // FIXME shortcut this code if the game is over
+    let curr_board = &node.board;
+    if curr_board.status() != BoardStatus::Ongoing {
+        /* Game is over, return win / loss values */
+        // Do we need to make sure that we don't hit this node again?
+        return BothScores::build_from(curr_board, eval_fun);
+    }
+
+    let heap       = &mut node.node_data;
+    let best_entry = heap.pop().unwrap();
+    let mv_idx     = best_entry.mv_idx;
+    let branch     = &mut node.moves[mv_idx];
+
+    let new_scores = continue_descent(branch, curr_board, eval_fun);
+
+    /* Update the heap */
+    let eval_player = curr_board.side_to_move();
+    let new_heap_entry = HeapEntry {
+        score:  new_scores.get(eval_player),
+        mv_idx
+    };
+    heap.push(new_heap_entry);
+
+    debug_assert!(node_is_consistent(node), "Inconsistent node after regular descent");
+
+    // FIXME handle finished games
+    /* Bug: Make sure to compute the scores that are sent upwards and
+     *      stored in the parent branch.
+     */
+    return best_scores(node, eval_fun);
+}
+
+fn continue_descent(branch: &mut SearchMove, prev_board: &Board, eval_fun: EvalFun) -> BothScores {
+    let new_scores = match branch.child_node.as_mut() {
+        Some(mut child) => {
+            /* child node already expanded: recursively descent */
+            descent(&mut child, eval_fun)
+        },
+        None => {
+            /* child not exanded yet: do it now and stop the recursion */
+            expand(branch, prev_board, eval_fun);
+            best_scores(branch.child_node.as_ref().unwrap(), eval_fun)
+        }
+    };
+
+    /* Update the branch data */
+    branch.mv_data = new_scores;
+
+    debug_assert!(branch_is_consistent(branch, prev_board, eval_fun),
+                  "Inconsistent branch after continue_descent");
+
+    return new_scores;
+}
+
+fn expand(branch: &mut SearchMove, prev_board: &Board, eval_fun: EvalFun) {
+    let mv        = branch.mv;
+    let new_board = prev_board.make_move_new(mv);
+    let new_child = new_node(new_board, eval_fun);
+
+/*
+Simple board evaluation does not match branch data
+(encountered in unexpanded branch)
+  value from branch data: 0
+  value from board evaluation: 1
+*/
+    debug_assert!(node_is_consistent(&new_child), "New expanded node is inconsistent");
+
+    /* Mark this branch as expanded by storing the child node */
+    branch.child_node = Some(new_child);
+}
+
+fn new_node(board: Board, eval_fun: EvalFun) -> SearchNode {
+    /* Step 1: create the branches, with evaluation */
+    fn create_branches(board: &Board, eval_fun: EvalFun) -> Vec<SearchMove> {
+        let mut branches = Vec::new();
+        for mv in MoveGen::new_legal(board) {
+            /* Bug: Make sure to compute the scores wrt. the
+             *      new board state.
+             */
+            let next_board = board.make_move_new(mv);
+            branches.push(
+                SearchMove {
+                    mv,
+                    mv_data: BothScores::build_from(&next_board, eval_fun),
+                    child_node: None
+                }
+            )
+        }
+        return branches;
+    }
+
+    /* Step 2: Build the initial heap state */
+    fn build_heap(moves: &[SearchMove], player: Color) -> NodeData {
+        let mut heap = MaxHeap::new();
+        for mv_idx in 0..moves.len() {
+            let branch = &moves[mv_idx];
+            let scores = branch.mv_data;
+            let new_entry = HeapEntry {
+                score: scores.get(player),
+                mv_idx
+            };
+            heap.push(new_entry);
+        }
+        return heap;
+    }
+
+    let branches = create_branches(&board, eval_fun);
+    for b in branches.iter() {
+        debug_assert!(branch_is_consistent(b, &board, eval_fun),
+                      "Created an inconsistent branch in 'new_node()'");
+    }
+
+    let eval_player = board.side_to_move();
+
+    SearchNode {
+        board,
+        node_data: build_heap(&branches, eval_player),
+        moves: branches
+    }
+}
+
+/* Useful utilities */
+
+fn best_scores(node: &SearchNode, eval_fun: EvalFun) -> BothScores {
+    match best_branch(node) {
+        Some(branch) => branch.mv_data /*scores*/,
+        None         => BothScores::build_from(&node.board, eval_fun)
+    }
+}
+
+fn best_move(node: &SearchNode) -> Option<ChessMove> {
+    best_branch(node)
+        .map(|b| b.mv)
+}
+
+fn best_branch(node: &SearchNode) -> Option<&SearchMove> {
+    best_mv_idx(node)
+        .map(|mv_idx| &node.moves[mv_idx])
+}
+
+fn best_mv_idx(node: &SearchNode) -> Option<usize> {
+    let heap = &node.node_data;
+    let best_entry = heap.peek();
+    best_entry.map(|e| e.mv_idx)
+}
+
+fn sorted_heap_entries(node: &SearchNode) -> Vec<HeapEntry> {
+    node.node_data
+        .clone()
+        .into_sorted_vec()
+}
+
+fn sorted_mv_idx(node: &SearchNode) -> impl Iterator<Item = usize> {
+    sorted_heap_entries(node)
+        .into_iter()
+        .map(|entry| entry.mv_idx)
+}
+
+#[allow(dead_code)]
+fn sorted_branches(node: &SearchNode) -> Vec<&SearchMove> {
+    sorted_mv_idx(node)
+        .map(|mv_idx| &node.moves[mv_idx])
+        .collect()
+}
+
+/********** Consistency checks **********/
+
+fn node_is_consistent(node: &SearchNode) -> bool {
+    let heap = &node.node_data;
+    if node.board.status() != BoardStatus::Ongoing {
+        if !heap.is_empty() {
+            println!("Node's game is over, but its heap is not empty");
+            return false;
+        }
+        if !node.moves.is_empty() {
+            println!("Node's game is over, but it somehow contain moves");
+            return false;
+        }
+        return true;
+    }
+
+    let node_player = node.board.side_to_move();
+    let max_heap_entry = heap.peek().unwrap();
+
+    /* 1. check that the max value in the heap is the same as the
+     * max movedata.
+     */
+    let max_heap_val = max_heap_entry.score;
+
+    let max_branch_val = node.moves.iter()
+                            .map(|b| b.mv_data.get(node_player))
+                            .max()
+                            .unwrap();
+
+    if max_heap_val != max_branch_val {
+        println!("Inconsistent max values in node");
+        println!("  max value by peeking into the heap: {}", max_heap_val);
+        println!("  max value by iterating over the branches: {}", max_branch_val);
+        return false;
+    }
+
+    /* 2. Check that the value of the max move in the heap
+     * is the same as in the corresponding branch.
+     */
+    let best_heap_move = best_move(node).unwrap();
+    let corr_branch = node.moves.iter()
+                        .find(|b| b.mv == best_heap_move)
+                        .unwrap();
+    let branch_val = corr_branch.mv_data.get(node_player);
+
+    if branch_val != max_heap_val {
+        println!("The branch corresponding to the best move doesn't have the same value in the heap");
+        println!("(computed using 'find()' on the branch list)");
+        println!("  max value from the heap: {}", max_heap_val);
+        println!("  branch value for the max move in the heap: {}", branch_val);
+        return false;
+    }
+
+    /* 2b. Same check as 2., but done via best_branch
+     */
+    let best_branch = best_branch(node).unwrap();
+    let branch_val = best_branch.mv_data.get(node_player);
+
+    if branch_val != max_heap_val {
+        println!("The branch corresponding to the best move doesn't have the same value in the heap");
+        println!("(computed using 'best_branch()')");
+        println!("  max value from the heap: {}", max_heap_val);
+        println!("  branch value for the max move in the heap: {}", branch_val);
+        return false;
+    }
+
+    return true;
+}
+
+fn branch_is_consistent(branch: &SearchMove, prev_board: &Board, eval_fun: EvalFun) -> bool {
+    let print_additional_data = || {
+        println!("");
+        match branch.child_node.as_ref() {
+            Some(child_node) => {
+                println!("Parent is {:?}, child is {:?}", prev_board.side_to_move(), child_node.board.side_to_move());
+                for child_entry in sorted_heap_entries(child_node) {
+                    println!("HeapEntry(score: {}, mv_idx ~> {})",
+                             child_entry.score,
+                             child_node.moves[child_entry.mv_idx].mv_data);
+                }
+            }
+            None => {
+                /* nothing for the moment */
+            }
+        }
+    };
+
+    let prev_player = prev_board.side_to_move();
+    let branch_val = branch.mv_data.get(prev_player);
+
+    /* 1. For non-expanded branches, the branch value must be the
+     *    value of the board.
+     */
+    if branch.child_node.is_none() {
+        let next_board = prev_board.make_move_new(branch.mv);
+        let next_board_val = eval_fun(&next_board, prev_player);
+
+        if branch_val != next_board_val {
+            println!("Simple board evaluation does not match branch data");
+            println!("(encountered in unexpanded branch)");
+            println!("  value from branch data: {}", branch_val);
+            println!("  value from board evaluation: {}", next_board_val);
+            print_additional_data();
+            return false;
+        }
+    }
+    else {
+        let child_node = branch.child_node.as_ref().unwrap();
+        match best_branch(child_node) {
+            Some(best_child_branch) => {
+                /* 2. If branch is expanded, branch data must be consistent with
+                 *    best val in child heap.
+                 */
+                let best_child_val = best_child_branch.mv_data.get(prev_player);
+                if best_child_val != branch_val {
+                    println!("Branch value is inconsistent with best value from child");
+                    println!("  value in branch data: {}", branch_val);
+                    println!("  value of best branch in child: {}", best_child_val);
+                    print_additional_data();
+                    return false;
+                }
+             }
+             None => {
+                /* 3. Check values if the child board is over (finished game) */
+             }
+        }
+    }
+
+    return true;
+}
+
+/********** Debugging at the end of the search **********/
 
 fn finalize(
     final_tree: &SearchTree,
@@ -88,25 +495,6 @@ fn print_tree_statistics(
     if logger.allows(logging::LogLevel::Trace) {
         print_json_tree(tree, eval_fun, logger);
     }
-}
-
-fn sorted_heap_entries(node: &SearchNode) -> Vec<HeapEntry> {
-    node.node_data
-        .clone()
-        .into_sorted_vec()
-}
-
-fn sorted_mv_idx(node: &SearchNode) -> impl Iterator<Item = usize> {
-    sorted_heap_entries(node)
-        .into_iter()
-        .map(|entry| entry.mv_idx)
-}
-
-#[allow(dead_code)]
-fn sorted_branches(node: &SearchNode) -> Vec<&SearchMove> {
-    sorted_mv_idx(node)
-        .map(|mv_idx| &node.moves[mv_idx])
-        .collect()
 }
 
 fn print_json_tree(tree: &SearchTree, eval_fun: EvalFun, logger: &mut super::Logger) {
@@ -283,296 +671,7 @@ fn best_line_full(tree: &SearchTree) -> Vec<Either<&SearchNode, &SearchMove>> {
     return line;
 }
 
-type SearchTree = SearchNode;
-type SearchNode = searchtree::Node<NodeData, MoveData>;
-type SearchMove = searchtree::Branch<NodeData, MoveData>;
-
-type MaxHeap<T>  = FairHeap<T>;
-type NodeData    = MaxHeap<HeapEntry>;
-
-#[derive(Eq, Clone, Copy)]
-struct HeapEntry {
-    score:  eval::Score,
-    mv_idx: usize
-}
-
-/* We sort by score in the heap */
-impl PartialOrd for HeapEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        self.score.partial_cmp(&other.score)
-    }
-}
-
-impl PartialEq for HeapEntry {
-    fn eq(&self, other: &Self) -> bool {
-        self.score == other.score
-    }
-}
-
-impl Ord for HeapEntry {
-    fn cmp(&self, other: &Self) -> cmp::Ordering {
-        self.score.cmp(&other.score)
-    }
-}
-
-type MoveData   = BothScores;
-
-//fn both_scores(board: &Board, eval: EvalFun) -> BothScores {
-    //let mut unsafe_scores: [MaybeUninit<eval::Score>; chess::NUM_COLORS] = unsafe {
-        //MaybeUninit::uninit().assume_init()
-    //};
-    //for player in &chess::ALL_COLORS {
-        //unsafe_scores[player.to_index()] = MaybeUninit::new(eval(board, *player));
-    //}
-    //return unsafe {
-        //mem::transmute(unsafe_scores)  // turn into safe array
-    //};
-//}
-
-#[derive(Clone, Copy)]
-//struct BothScores([eval::Score; chess::NUM_COLORS]);
-struct BothScores {
-    white_score: eval::Score,
-    black_score: eval::Score,
-}
-impl BothScores {
-    fn new(white_score: eval::Score, black_score: eval::Score) -> Self {
-        BothScores {
-            white_score,
-            black_score
-        }
-        //assert!(Color::White.as_index() == 0 && )
-        //let mut unsafe_scores: [MaybeUninit<eval::Score>; chess::NUM_COLORS] = unsafe {
-            //MaybeUninit::uninit().assume_init()
-        //};
-        //let white_idx = Color::White.to_index();
-        //unsafe_scores[white_idx] = MaybeUninit::new(white_score);
-        //let black_idx = Color::Black.to_index();
-        //unsafe_scores[white_idx] = MaybeUninit::new(white_score);
-        //return unsafe {
-            //mem::transmute(unsafe_scores)  // turn into safe array
-        //};
-    }
-
-    fn get(&self, player: Color) -> eval::Score {
-        //self.0[player.as_index()]
-        match player {
-            Color::White => self.white_score,
-            Color::Black => self.black_score,
-        }
-    }
-
-    fn build_from(board: &Board, eval: EvalFun) -> Self {
-        Self::new(
-            eval(board, Color::White),
-            eval(board, Color::Black)
-        )
-    }
-}
-
-impl fmt::Display for BothScores {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}; {}]", self.white_score, self.black_score)
-    }
-}
-
-//#[derive(Clone)]
-//struct MoveAgg {
-    //scores: BothScores,
-    //mv_idx: usize
-//}
-
-fn astar_search(
-    board:       &Board,
-    eval_fun:    EvalFun,
-    time_budget: Duration)
-    -> SearchTree
-{
-    let start_time = Instant::now();
-    let mut tree = init_root(board.clone(), eval_fun);
-
-    while start_time.elapsed() < time_budget {
-        descent(&mut tree, eval_fun);
-    }
-
-    return tree;
-}
-
-fn init_root(init_board: Board, eval_fun: EvalFun) -> SearchTree {
-    new_node(init_board, eval_fun)
-}
-
-fn descent(node: &mut SearchNode, eval_fun: EvalFun) -> BothScores {
-    // FIXME shortcut this code if the game is over
-    let curr_board = &node.board;
-    if curr_board.status() != BoardStatus::Ongoing {
-        /* Game is over, return win / loss values */
-        // Do we need to make sure that we don't hit this node again?
-        return BothScores::build_from(curr_board, eval_fun);
-    }
-
-    let heap       = &mut node.node_data;
-    let best_entry = heap.pop().unwrap();
-    let mv_idx     = best_entry.mv_idx;
-    let branch     = &mut node.moves[mv_idx];
-
-    let new_scores = continue_descent(branch, curr_board, eval_fun);
-
-    /* Update the heap */
-    let eval_player = curr_board.side_to_move();
-    let new_heap_entry = HeapEntry {
-        score:  new_scores.get(eval_player),
-        mv_idx
-    };
-    heap.push(new_heap_entry);
-
-    // FIXME handle finished games
-    return new_scores;
-}
-
-fn continue_descent(branch: &mut SearchMove, prev_board: &Board, eval_fun: EvalFun) -> BothScores {
-    let new_scores = match branch.child_node.as_mut() {
-        Some(mut child) => {
-            /* child node already expanded: recursively descent */
-            descent(&mut child, eval_fun)
-        },
-        None => {
-            /* child not exanded yet: do it now and stop the recursion */
-            expand(branch, prev_board, eval_fun);
-            best_scores(branch.child_node.as_ref().unwrap(), eval_fun)
-        }
-    };
-
-    /* Update the branch data */
-    branch.mv_data = new_scores;
-
-    return new_scores;
-}
-
-fn expand(branch: &mut SearchMove, prev_board: &Board, eval_fun: EvalFun) {
-    let mv        = branch.mv;
-    let new_board = prev_board.make_move_new(mv);
-    let new_child = new_node(new_board, eval_fun);
-
-    /* Mark this branch as expanded by storing the child node */
-    branch.child_node = Some(new_child);
-}
-
-fn new_node(board: Board, eval_fun: EvalFun) -> SearchNode {
-    /* Step 1: create the branches, with evaluation */
-    fn create_branches(board: &Board, eval_fun: EvalFun) -> Vec<SearchMove> {
-        let mut branches = Vec::new();
-        for mv in MoveGen::new_legal(board) {
-            branches.push(
-                SearchMove {
-                    mv,
-                    mv_data: BothScores::build_from(board, eval_fun),
-                    child_node: None
-                }
-            )
-        }
-        return branches;
-    }
-
-    /* Step 2: Build the initial heap state */
-    fn build_heap(moves: &[SearchMove], player: Color) -> NodeData {
-        let mut heap = MaxHeap::new();
-        for mv_idx in 0..moves.len() {
-            let branch = &moves[mv_idx];
-            let scores = branch.mv_data;
-            let new_entry = HeapEntry {
-                score: scores.get(player),
-                mv_idx
-            };
-            heap.push(new_entry);
-        }
-        return heap;
-    }
-
-    let branches = create_branches(&board, eval_fun);
-    let eval_player = board.side_to_move();
-
-    SearchNode {
-        board,
-        node_data: build_heap(&branches, eval_player),
-        moves: branches
-    }
-
-    /*let mut node = SearchNode::new(board, NodeData::default(), |_, _| ());
-    node.node_data = base_search(&board, &mv_data.moves, eval_fun);
-    return node;*/
-}
-/*
-fn base_search(board: &Board, moves: &[SearchMove], eval_fun: EvalFun) -> NodeData {
-    let mut ord_moves = MaxHeap::new();
-    let eval_player = board.side_to_move();
-    for mv_idx in 0..moves.len() {
-        let mv = moves[mv_idx].mv;
-        let res_board  = board.make_move_new(mv);
-        let res_scores = both_scores(&res_board, eval_fun);
-        ord_moves.push(OrdByKey::from(
-            res_scores[eval_player.to_index()],
-            MoveAgg {
-                scores: res_scores,
-                mv_idx: mv_idx
-            }
-        ));
-    }
-    return ord_moves;
-}
-*/
-fn best_scores(node: &SearchNode, eval_fun: EvalFun) -> BothScores {
-    match best_branch(node) {
-        Some(branch) => branch.mv_data /*scores*/,
-        None         => BothScores::build_from(&node.board, eval_fun)
-    }
-}
-
-fn best_move(node: &SearchNode) -> Option<ChessMove> {
-    best_branch(node)
-        .map(|b| b.mv)
-}
-
-fn best_branch(node: &SearchNode) -> Option<&SearchMove> {
-    best_mv_idx(node)
-        .map(|mv_idx| &node.moves[mv_idx])
-}
-
-fn best_mv_idx(node: &SearchNode) -> Option<usize> {
-    let heap = &node.node_data;
-    let best_entry = heap.peek();
-    best_entry.map(|e| e.mv_idx)
-}
-
-const DEFAULT_EVAL_FUN: EvalFun = eval::classic_eval;
-#[allow(dead_code)]
-pub fn astar_player(time_budget: Duration) -> AStar {
-    AStar {
-        time_budget,
-        eval: DEFAULT_EVAL_FUN,
-    }
-}
-
-/* Further debugging services */
-
-/*impl AStar {
-    #[allow(dead_code)]
-    pub fn write_res_tree<W>(
-        &mut self,
-        board:       &Board,
-        logger:      &mut super::Logger,
-        tree_writer: &mut W)
-        -> io::Result<ChessMove>
-        where
-            W: io::Write
-    {
-        let search_tree = astar_search(board, self.eval, self.time_budget);
-
-        let dot_graph = build_dot_graph(&search_tree, self.eval);
-        dot_graph.write_to(tree_writer)
-            .map(|_| finalize(&search_tree, self.eval, self.time_budget, logger))
-    }
-}*/
+/* Generation of a dot graph */
 
 pub fn build_dot_graph_from(player: &AStar, tree: &OpaqueTree) -> dot::Graph {
     build_dot_graph(&tree.0, player.eval)
@@ -584,6 +683,8 @@ fn build_dot_graph(tree: &SearchTree, eval_fun: EvalFun) -> dot::Graph {
     let eval_player = tree.board.side_to_move();
 
     let make_node = |dot_node: dot::Node, search_node: &SearchNode| {
+        assert!(node_is_consistent(search_node));
+
         let value_now = eval_fun(&search_node.board, eval_player);
         let value_later = best_scores(search_node, eval_fun).get(eval_player);
         let label = format!("now: {}\\nlater: {}", value_now, value_later);
@@ -592,6 +693,8 @@ fn build_dot_graph(tree: &SearchTree, eval_fun: EvalFun) -> dot::Graph {
     };
 
     let make_edge = |dot_edge: dot::Edge, parent_node: &SearchNode, search_edge: &SearchMove| {
+        assert!(branch_is_consistent(search_edge, &parent_node.board, eval_fun));
+
         let label = format!("{}\\n{}", search_edge.mv, search_edge.mv_data);
         let curr_player = parent_node.board.side_to_move();
         let edge_score = search_edge.mv_data.get(curr_player);
@@ -628,7 +731,7 @@ fn build_dot_graph(tree: &SearchTree, eval_fun: EvalFun) -> dot::Graph {
     searchtree::build_dot_graph(tree, make_node, make_edge, make_leaf)
         .set_graph_global(GraphProp::KeyValue {
             key:   String::from("splines"),
-            value: String::from("false")
+            value: String::from("true")
         })
         .set_node_global(NodeProp::KeyValue {
             key:   String::from("shape"),

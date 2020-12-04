@@ -106,6 +106,10 @@ impl<T: Ord> FairHeap<T> {
         self.fair_pop_index()
             .map(|fair_idx| &self.eq_best[fair_idx])
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.eq_best.is_empty()
+    }
 }
 
 impl<T: Ord> Default for FairHeap<T> {

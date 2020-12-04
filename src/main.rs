@@ -19,16 +19,15 @@ use std::time::Duration;
 
 #[allow(unused_variables)]
 fn main() {
-    //let white = play::evaldriven::classic_eval_player();
     //let white = play::montecarlo::basic_monte_carlo1();
-    //let white = play::evaldriven::classic_eval_player();
     //let white = play::exhaustive::exhaustive_search_player(2);
+    //let black = play::astar::asprl::parallel_player(Duration::from_millis(30), 4);
     let white = play::astar::astar_player(Duration::from_millis(30));
-    let black = play::astar::asprl::parallel_player(Duration::from_millis(30), 4);
+    let black = play::evaldriven::classic_eval_player();
 
     let log_level = logging::LogLevel::Debug;
 
-    //play_a_game(white, black, log_level);
+    /*play_a_game(white, black, log_level);*/
     explain_move_from_prev_game(
         white,
         &Path::new("games/debug_astar_201115/debug_move_17.pgn"),
@@ -118,7 +117,7 @@ fn explain_move_from_prev_game(
     let (debug_board, debug_mv) = find_move_in_game(&full_game, debug_player, turn).unwrap();
 
     let mut logger = logging::log_to(io::stdout(), log_level);
-    let max_retries = 500;
+    let max_retries = 2000;
     for try_count in 0..max_retries {
         use play::DebugPlayer;
         let search_tree = player.compute_move(&debug_board, &mut logger);
