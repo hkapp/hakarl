@@ -21,19 +21,19 @@ use std::time::Duration;
 fn main() {
     //let white = play::montecarlo::basic_monte_carlo1();
     //let white = play::exhaustive::exhaustive_search_player(2);
-    //let black = play::astar::asprl::parallel_player(Duration::from_millis(30), 4);
-    let white = play::astar::astar_player(Duration::from_millis(30));
-    let black = play::evaldriven::classic_eval_player();
+    //let black = play::evaldriven::classic_eval_player();
+    let white = play::astar::astar_player(Duration::from_millis(100));
+    let black = play::astar::astarparl::parallel_player(Duration::from_millis(100), 4);
 
     let log_level = logging::LogLevel::Debug;
 
-    /*play_a_game(white, black, log_level);*/
-    explain_move_from_prev_game(
+    play_a_game(white, black, log_level);
+    /*explain_move_from_prev_game(
         white,
         &Path::new("games/debug_astar_201115/debug_move_17.pgn"),
         Color::White,
         17,
-        log_level);
+        log_level);*/
 }
 
 /***********  PLAY **********/
@@ -103,6 +103,7 @@ fn find_move_in_game(game: &play::Game, player: Color, turn: u16) -> Option<(Boa
     None
 }
 
+#[allow(dead_code)]
 fn explain_move_from_prev_game(
     mut player:   play::astar::AStar,
     pgn_to_load:  &Path,

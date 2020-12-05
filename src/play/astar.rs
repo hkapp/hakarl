@@ -1,4 +1,4 @@
-pub mod asprl;
+pub mod astarparl;
 
 use chess;
 use chess::{Board, BoardStatus, ChessMove, Color, MoveGen};
