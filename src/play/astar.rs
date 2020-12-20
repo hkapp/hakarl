@@ -1,5 +1,5 @@
 pub mod astarparl;
-pub mod astarlkfree;
+/*pub mod astarlkfree;*/
 
 use chess;
 use chess::{Board, BoardStatus, ChessMove, Color, MoveGen};
